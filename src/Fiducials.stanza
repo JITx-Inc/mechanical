@@ -1,0 +1,6 @@
+#use-added-syntax(jitx)
+defpackage mechanical/Fiducials:
+  import core
+  import jitx
+  import jitx/commands
+

@@ -1,0 +1,41 @@
+#use-added-syntax(jitx)
+defpackage mechanical/MountingHoles:
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl/ensure
+  import jsl/landpatterns
+  import jsl/geometry/basics
+
+
+; I want to be able to support 2 types of
+;   mounting hole:
+; 1.  Non-plated Through-holes
+; 2.  Plated Grounding Through-holes
+
+public defstruct SilkscreenOutline :
+  diam:Double with:
+    ensure => ensure-positive!
+  silk-width:Double with:
+    ensure => ensure-positive!
+
+
+public defstruct MountingHole :
+  hole:Shape
+  doc: \<DOC>
+  Shape of copper landing for plated through-holes
+  If this value is `None()`, then the hole will be
+  unplated.
+
+  <DOC>
+  copper:Maybe<Shape> with:
+    default => None()
+  silk-outline:Maybe<SilkscreenOutline> with:
+    default => None()
+  sm-expand?:Maybe<Double> with:
+    ensure => ensure-non-negative!
+    default => None()
+  paste:Maybe<Shape> with:
+    default => None()
+
