@@ -39,3 +39,24 @@ public defstruct MountingHole :
   paste:Maybe<Shape> with:
     default => None()
 
+; TODO: default offset value; I made this up
+val DEFAULT-OFFSET = 6.0
+
+; TODO: more flexible offset?
+;       maybe have separate x- and y-offsets?
+public defn add-mounting-holes (get-mounting-hole:(Int) -> Maybe<MountingHole>, board-shape:Shape, -- offset:Double = DEFAULT-OFFSET) :
+  val d = dims(board-shape)
+  val board = Rectangle(x(d), y(d))
+  inside pcb-module :
+    val w =  width(board)
+    val h =  height(board)
+    for (l in grid-locs(2, 2, w - offset, h - offset), i in 1 through 4) do :
+      match(get-mounting-hole(i)) :
+        (h:One) : 
+          inst hole : value(h) 
+          place(hole) at l on Top
+        (otherwise) : false
+
+public defn add-mounting-holes (board-shape:Shape, mounting-hole:MountingHole -- offset:Double = DEFAULT-OFFSET) :
+  within (idx) = add-mounting-holes(board-shape) : 
+    One(mounting-hole)
