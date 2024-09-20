@@ -7,6 +7,9 @@ defpackage mechanical/MountingHoles:
   import jsl/ensure
   import jsl/landpatterns
   import jsl/geometry/basics
+  import jsl/symbols/framework
+  ;import jsl/geometry/box
+
 
 
 ; I want to be able to support 2 types of
@@ -53,10 +56,73 @@ public defn add-mounting-holes (get-mounting-hole:(Int) -> Maybe<MountingHole>, 
     for (l in grid-locs(2, 2, w - offset, h - offset), i in 1 through 4) do :
       match(get-mounting-hole(i)) :
         (h:One) : 
-          inst hole : value(h) 
+          inst hole : mounting-hole(value(h))
           place(hole) at l on Top
         (otherwise) : false
 
 public defn add-mounting-holes (board-shape:Shape, mounting-hole:MountingHole -- offset:Double = DEFAULT-OFFSET) :
   within (idx) = add-mounting-holes(board-shape) : 
     One(mounting-hole)
+
+defn mounting-hole (mh:MountingHole) :
+  pcb-component comp :
+    pin-properties:
+      [pin:Ref | pads:Ref ...]
+      [p       | p           ]
+
+    ; Schematic symbol
+    assign-symbol(mounting-hole-sym(mh))
+
+    ; Assign landpattern
+    assign-landpattern(mounting-hole-pkg(mh))
+  comp
+
+; TODO : flesh out
+defn mounting-hole-pkg (mh:MountingHole) :
+  pcb-landpattern lp :
+    ; TODO : silkscreen
+    ; TODO : soldermask expansion
+    ; TODO : paste
+    pad p : pth-pad(hole(mh), hole(mh)) at loc(0.0, 0.0)  ; TODO : be smarter
+    false
+  lp
+
+defn mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
+  match(copper(mh):One) : plated-mounting-hole-sym(mh)
+  else : non-plated-mounting-hole-sym(mh)
+  
+; TODO : parameterize?
+defn plated-mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
+  create-symbol(MHSymbol(false))
+
+; TODO : parameterize?
+defn non-plated-mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
+  create-symbol(MHSymbol(false))
+
+defn MHSymbol (plated?:True|False) -> SymbolDefn :
+  val r1 = 0.5
+  val r2 = 1.0
+  val shift-up = Pose(Point(0.0, 1.5), 0.0, false)
+  new SymbolDefn :
+    defmethod name (this) -> String : "MountingHole"
+    defmethod build-pins (this, sn:SymbolNode) :
+      add-pin(sn, Ref(`p), Point(0.0, 0.0), name = "pin-1")
+    defmethod build-artwork (this, sn:SymbolNode) :
+      add-glyph(sn, shift-up * Circle(r1))
+      add-glyph(sn, shift-up * Circle(r2))
+      ; TODO : default
+      line(sn, [[0.0, 0.0] [0.0, 0.5]], width = 0.05)
+    defmethod build-params (this, sn:SymbolNode) :
+      false
+      ;if show-reference-designator?(params) :
+      ;  val overall = glyph-bounds(sn)
+      ;  val [lpos, anchor] =
+      ;    match(label-side(params)) :
+      ;      (d:Dir) : switch(d) :
+      ;        Left  : [[left(overall) - label-margin(params), y(center(overall))], E]
+      ;        Right : [[right(overall) + label-margin(params), y(center(overall))], W]
+      ;        Up    : [[x(center(overall)), y-upper + label-margin(params)], C]
+      ;        Down  : [[x(center(overall)), y-lower - label-margin(params)], C]
+      ;      (otherwise) : ; place in center of shape
+      ;        [shift-up * center(shape(params)), C]
+      ;  add-ref-label(sn, lpos, anchor = anchor)
