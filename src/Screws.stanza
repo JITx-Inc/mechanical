@@ -1,0 +1,6 @@
+defpackage mechanical/Screws :
+  import core
+
+; TODO
+public defstruct ScrewSize :
+  mm : Double
