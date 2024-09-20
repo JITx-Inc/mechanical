@@ -8,6 +8,7 @@ defpackage mechanical/MountingHoles:
   import jsl/landpatterns
   import jsl/geometry/basics
   import jsl/symbols/framework
+  import jsl/errors
   ;import jsl/geometry/box
 
 
@@ -43,26 +44,46 @@ public defstruct MountingHole :
     default => None()
 
 ; TODO: default offset value; I made this up
-val DEFAULT-OFFSET = 6.0
+val DEFAULT-OFFSET = 3.0
 
 ; TODO: more flexible offset?
 ;       maybe have separate x- and y-offsets?
-public defn add-mounting-holes (get-mounting-hole:(Int) -> Maybe<MountingHole>, board-shape:Shape, -- offset:Double = DEFAULT-OFFSET) :
+public defn add-mounting-holes (
+    get-mounting-hole:(Int, Int) -> Maybe<MountingHole>, 
+    board-shape:Shape -- 
+    offset:Double = DEFAULT-OFFSET
+    num-rows:Int = 2
+    num-columns:Int = 2) :
+  if num-rows < 2 : throw(ArgumentError("num-rows must be at least 2"))
+  if num-columns < 2 : throw(ArgumentError("num-columns must be at least 2"))
   val d = dims(board-shape)
   val board = Rectangle(x(d), y(d))
   inside pcb-module :
-    val w =  width(board)
-    val h =  height(board)
-    for (l in grid-locs(2, 2, w - offset, h - offset), i in 1 through 4) do :
-      match(get-mounting-hole(i)) :
+    val w = width(board)
+    val h = height(board)
+    val dx = (w - (2.0 * offset)) / to-double(num-columns - 1)
+    val dy = (h - (2.0 * offset)) / to-double(num-rows - 1)
+    for (l in grid-locs(num-rows, num-columns, dx, dy), pos in grid-coords(num-rows, num-columns)) do :
+      val [x, y] = pos
+      match(get-mounting-hole(x, y)) :
         (h:One) : 
           inst hole : mounting-hole(value(h))
           place(hole) at l on Top
         (otherwise) : false
 
-public defn add-mounting-holes (board-shape:Shape, mounting-hole:MountingHole -- offset:Double = DEFAULT-OFFSET) :
-  within (idx) = add-mounting-holes(board-shape) : 
+public defn add-mounting-holes (
+    board-shape:Shape, 
+    mounting-hole:MountingHole -- 
+    offset:Double = DEFAULT-OFFSET
+    num-rows:Int = 2
+    num-columns:Int = 2) :
+  within (x, y) = add-mounting-holes(board-shape, offset = offset, num-rows = num-rows, num-columns = num-columns) : 
     One(mounting-hole)
+
+; Assume row-major traversal (ie the grid-locs default)
+defn grid-coords (nrows:Int, ncols:Int) -> Seq<[Int,Int]> :
+  for y in 0 to ncols seq-cat :
+    for x in 0 to ncols seq : [x, y]
 
 defn mounting-hole (mh:MountingHole) :
   pcb-component comp :
@@ -74,16 +95,35 @@ defn mounting-hole (mh:MountingHole) :
     assign-symbol(mounting-hole-sym(mh))
 
     ; Assign landpattern
-    assign-landpattern(mounting-hole-pkg(mh))
+    assign-landpattern(plated-mounting-hole-pkg(mh))
   comp
 
+defn val?<?T> (x:Maybe<?T>) -> T|False :
+  match(x:One) : value(x)
+  else : false
+
 ; TODO : flesh out
-defn mounting-hole-pkg (mh:MountingHole) :
+defn plated-mounting-hole-pkg (mh:MountingHole) :
   pcb-landpattern lp :
     ; TODO : silkscreen
     ; TODO : soldermask expansion
     ; TODO : paste
-    pad p : pth-pad(hole(mh), hole(mh)) at loc(0.0, 0.0)  ; TODO : be smarter
+    val sm =
+      match(sm-expand?(mh)) :
+        (x:One) : expand(hole(mh), value(x))
+        (otherwise) : false
+    val ps = 
+      match(/paste(mh)) :
+        (p:One) : value(p)
+        (otherwise) : false
+    val hole-pad =
+      match(/copper(mh)) :
+        ; TODO : don't cast
+        (copper:One) : pth-pad(/hole(mh), value!(/copper(mh)), sm, ps)
+        ; TODO : don't handle this case 
+        (otherwise) : npth-pad(/hole(mh), sm)
+
+    pad p : hole-pad at loc(0.0, 0.0) ; pth-pad(hole(mh), hole(mh)) at loc(0.0, 0.0)  ; TODO : be smarter
     false
   lp
 
@@ -102,16 +142,14 @@ defn non-plated-mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
 defn MHSymbol (plated?:True|False) -> SymbolDefn :
   val r1 = 0.5
   val r2 = 1.0
-  val shift-up = Pose(Point(0.0, 1.5), 0.0, false)
+  val shift-up = Pose(Point(0.0, 1.0), 0.0, false)
   new SymbolDefn :
     defmethod name (this) -> String : "MountingHole"
     defmethod build-pins (this, sn:SymbolNode) :
       add-pin(sn, Ref(`p), Point(0.0, 0.0), name = "pin-1")
     defmethod build-artwork (this, sn:SymbolNode) :
-      add-glyph(sn, shift-up * Circle(r1))
       add-glyph(sn, shift-up * Circle(r2))
-      ; TODO : default
-      line(sn, [[0.0, 0.0] [0.0, 0.5]], width = 0.05)
+      add-glyph(sn, shift-up * Circle(r1))
     defmethod build-params (this, sn:SymbolNode) :
       false
       ;if show-reference-designator?(params) :
