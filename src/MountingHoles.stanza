@@ -31,7 +31,6 @@ public defstruct MountingHole :
   Shape of copper landing for plated through-holes
   If this value is `None()`, then the hole will be
   unplated.
-
   <DOC>
   copper:Maybe<Shape> with:
     default => None()
@@ -97,36 +96,48 @@ defn mounting-hole (mh:MountingHole) :
     assign-symbol(mounting-hole-sym(mh))
 
     ; Assign landpattern
-    assign-landpattern(plated-mounting-hole-pkg(mh))
+    assign-landpattern(mounting-hole-pkg(mh))
   comp
 
 defn val?<?T> (x:Maybe<?T>) -> T|False :
   match(x:One) : value(x)
   else : false
 
-; TODO : flesh out
-defn plated-mounting-hole-pkg (mh:MountingHole) :
+defn make-silkscreen (mh:MountingHole) :
+  inside pcb-landpattern :
+    match(silk-outline(mh)) :
+      (silk:One) :
+        layer(Silkscreen("mounting-hole", Top)) = value(silk)
+      (otherwise) : false ; do nothing
+
+defn mounting-hole-pkg (mh:MountingHole) :
+  match(copper(mh):One) : plated-mounting-hole-pkg(mh)
+  else : non-plated-mounting-hole-pkg(mh)
+
+defn non-plated-mounting-hole-pkg (mh:MountingHole) :
+  ; TODO : does non-plated pad need paste?
   pcb-landpattern lp :
-    ; TODO : silkscreen
-    ; TODO : soldermask expansion
-    ; TODO : paste
     val sm =
       match(sm-expand?(mh)) :
         (x:One) : expand(hole(mh), value(x))
         (otherwise) : false
-    val ps =
+    pad p : npth-pad(/hole(mh), sm) at loc(0.0, 0.0)
+    make-silkscreen(mh)
+  lp
+
+defn plated-mounting-hole-pkg (mh:MountingHole) :
+  pcb-landpattern lp :
+    val sm =
+      match(sm-expand?(mh)) :
+        (x:One) : expand(hole(mh), value(x))
+        (otherwise) : false
+    val paste =
       match(/paste(mh)) :
         (p:One) : value(p)
         (otherwise) : false
-    val hole-pad =
-      match(/copper(mh)) :
-        ; TODO : don't cast
-        (copper:One) : pth-pad(/hole(mh), value!(/copper(mh)), sm, ps)
-        ; TODO : don't handle this case
-        (otherwise) : npth-pad(/hole(mh), sm)
-
-    pad p : hole-pad at loc(0.0, 0.0) ; pth-pad(hole(mh), hole(mh)) at loc(0.0, 0.0)  ; TODO : be smarter
-    false
+    val mh-pad = pth-pad(/hole(mh), value!(/copper(mh)), sm, paste)
+    pad p : mh-pad at loc(0.0, 0.0)
+    make-silkscreen(mh)
   lp
 
 defn mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
