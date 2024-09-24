@@ -49,13 +49,16 @@ val DEFAULT-OFFSET = 3.0
 ; TODO: more flexible offset?
 ;       maybe have separate x- and y-offsets?
 public defn add-mounting-holes (
-    get-mounting-hole:(Int, Int) -> Maybe<MountingHole>, 
-    board-shape:Shape -- 
+    get-mounting-hole:(Int, Int) -> Maybe<MountingHole> --
     offset:Double = DEFAULT-OFFSET
     num-rows:Int = 2
     num-columns:Int = 2) :
   if num-rows < 2 : throw(ArgumentError("num-rows must be at least 2"))
   if num-columns < 2 : throw(ArgumentError("num-columns must be at least 2"))
+  val board-shape =
+    match(get-board()) :
+      (b:Board) : get-boundary(b)
+      (otherwise) : throw(Exception("add-mounting-holes: board has not yet been set."))
   val d = dims(board-shape)
   val board = Rectangle(x(d), y(d))
   inside pcb-module :
@@ -66,18 +69,17 @@ public defn add-mounting-holes (
     for (l in grid-locs(num-rows, num-columns, dx, dy), pos in grid-coords(num-rows, num-columns)) do :
       val [x, y] = pos
       match(get-mounting-hole(x, y)) :
-        (h:One) : 
+        (h:One) :
           inst hole : mounting-hole(value(h))
           place(hole) at l on Top
         (otherwise) : false
 
 public defn add-mounting-holes (
-    board-shape:Shape, 
-    mounting-hole:MountingHole -- 
+    mounting-hole:MountingHole --
     offset:Double = DEFAULT-OFFSET
     num-rows:Int = 2
     num-columns:Int = 2) :
-  within (x, y) = add-mounting-holes(board-shape, offset = offset, num-rows = num-rows, num-columns = num-columns) : 
+  within (x, y) = add-mounting-holes(offset = offset, num-rows = num-rows, num-columns = num-columns) :
     One(mounting-hole)
 
 ; Assume row-major traversal (ie the grid-locs default)
@@ -112,7 +114,7 @@ defn plated-mounting-hole-pkg (mh:MountingHole) :
       match(sm-expand?(mh)) :
         (x:One) : expand(hole(mh), value(x))
         (otherwise) : false
-    val ps = 
+    val ps =
       match(/paste(mh)) :
         (p:One) : value(p)
         (otherwise) : false
@@ -120,7 +122,7 @@ defn plated-mounting-hole-pkg (mh:MountingHole) :
       match(/copper(mh)) :
         ; TODO : don't cast
         (copper:One) : pth-pad(/hole(mh), value!(/copper(mh)), sm, ps)
-        ; TODO : don't handle this case 
+        ; TODO : don't handle this case
         (otherwise) : npth-pad(/hole(mh), sm)
 
     pad p : hole-pad at loc(0.0, 0.0) ; pth-pad(hole(mh), hole(mh)) at loc(0.0, 0.0)  ; TODO : be smarter
@@ -130,7 +132,7 @@ defn plated-mounting-hole-pkg (mh:MountingHole) :
 defn mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
   match(copper(mh):One) : plated-mounting-hole-sym(mh)
   else : non-plated-mounting-hole-sym(mh)
-  
+
 ; TODO : parameterize?
 defn plated-mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
   create-symbol(MHSymbol(false))

@@ -236,7 +236,7 @@ pcb-module rgmii-1000BaseT-uut:
   val mdi-constraint = MDI-100Base-TX-Constraint(diff(typ(diff-ti)))
   constrain-topology(phy-mdi => conn-mdi, mdi-constraint)
 
-  add-mounting-holes(bs, mh)
+  add-mounting-holes(mh)
 
 
 set-global-query-defaults!(min-stock = 1, mounting = "smd", case = ["0201"])
