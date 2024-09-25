@@ -41,6 +41,8 @@ public defstruct MountingHole :
     default => None()
   paste:Maybe<Shape> with:
     default => None()
+  symbol-line-width:Double with:
+    default => 0.1
 
 ; TODO: default offset value; I made this up
 val DEFAULT-OFFSET = 3.0
@@ -81,6 +83,8 @@ public defn add-mounting-holes (
   within (x, y) = add-mounting-holes(offset = offset, num-rows = num-rows, num-columns = num-columns) :
     One(mounting-hole)
 
+; TODO : maybe an API that takes positions?
+
 ; Assume row-major traversal (ie the grid-locs default)
 defn grid-coords (nrows:Int, ncols:Int) -> Seq<[Int,Int]> :
   for y in 0 to ncols seq-cat :
@@ -93,7 +97,7 @@ defn mounting-hole (mh:MountingHole) :
       [p       | p           ]
 
     ; Schematic symbol
-    assign-symbol(mounting-hole-sym(mh))
+    assign-symbol(create-symbol(MHSymbol(mh)))
 
     ; Assign landpattern
     assign-landpattern(mounting-hole-pkg(mh))
@@ -102,6 +106,10 @@ defn mounting-hole (mh:MountingHole) :
 defn val?<?T> (x:Maybe<?T>) -> T|False :
   match(x:One) : value(x)
   else : false
+
+;=========================
+; Landpattern helpers
+;=========================
 
 defn make-silkscreen (mh:MountingHole) :
   inside pcb-landpattern :
@@ -140,40 +148,28 @@ defn plated-mounting-hole-pkg (mh:MountingHole) :
     make-silkscreen(mh)
   lp
 
-defn mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
-  match(copper(mh):One) : plated-mounting-hole-sym(mh)
-  else : non-plated-mounting-hole-sym(mh)
+;=========================
+; Symbol helpers
+;=========================
 
-; TODO : parameterize?
-defn plated-mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
-  create-symbol(MHSymbol(false))
-
-; TODO : parameterize?
-defn non-plated-mounting-hole-sym (mh:MountingHole) -> SchematicSymbol :
-  create-symbol(MHSymbol(false))
-
-defn MHSymbol (plated?:True|False) -> SymbolDefn :
-  val r1 = 0.5
-  val r2 = 1.0
+defn MHSymbol (mh:MountingHole) -> SymbolDefn :
   val shift-up = Pose(Point(0.0, 1.0), 0.0, false)
   new SymbolDefn :
     defmethod name (this) -> String : "MountingHole"
     defmethod build-pins (this, sn:SymbolNode) :
       add-pin(sn, Ref(`p), Point(0.0, 0.0), name = "pin-1")
     defmethod build-artwork (this, sn:SymbolNode) :
-      add-glyph(sn, shift-up * Circle(r2))
-      add-glyph(sn, shift-up * Circle(r1))
+      ; radii
+      val r1 = 0.5
+      val r2 = 1.0
+      if copper(mh) is One : ; plated case: circles are filled
+        add-glyph(sn, shift-up * Circle(r2))
+        add-glyph(sn, shift-up * Circle(r1))
+      else : ; non-plated: use lines
+        val arc1 = Arc(Point(0.0, 0.0), r1, 0.0, 360.0)
+        val arc2 = Arc(Point(0.0, 0.0), r2, 0.0, 360.0)
+        val lw = symbol-line-width(mh)
+        add-glyph(sn, shift-up * Polyline(lw, [arc1]))
+        add-glyph(sn, shift-up * Polyline(lw, [arc2]))
     defmethod build-params (this, sn:SymbolNode) :
       false
-      ;if show-reference-designator?(params) :
-      ;  val overall = glyph-bounds(sn)
-      ;  val [lpos, anchor] =
-      ;    match(label-side(params)) :
-      ;      (d:Dir) : switch(d) :
-      ;        Left  : [[left(overall) - label-margin(params), y(center(overall))], E]
-      ;        Right : [[right(overall) + label-margin(params), y(center(overall))], W]
-      ;        Up    : [[x(center(overall)), y-upper + label-margin(params)], C]
-      ;        Down  : [[x(center(overall)), y-lower - label-margin(params)], C]
-      ;      (otherwise) : ; place in center of shape
-      ;        [shift-up * center(shape(params)), C]
-      ;  add-ref-label(sn, lpos, anchor = anchor)
