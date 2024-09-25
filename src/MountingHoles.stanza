@@ -42,7 +42,7 @@ public defstruct MountingHole :
   paste:Maybe<Shape> with:
     default => None()
   symbol-line-width:Double with:
-    default => 0.1
+    default => 0.05
 
 ; TODO: default offset value; I made this up
 val DEFAULT-OFFSET = 3.0
@@ -153,15 +153,15 @@ defn plated-mounting-hole-pkg (mh:MountingHole) :
 ;=========================
 
 defn MHSymbol (mh:MountingHole) -> SymbolDefn :
-  val shift-up = Pose(Point(0.0, 1.0), 0.0, false)
+  val r1 = 0.25
+  val r2 = 0.5
+  val shift-up = Pose(Point(0.0, r2), 0.0, false)
   new SymbolDefn :
     defmethod name (this) -> String : "MountingHole"
     defmethod build-pins (this, sn:SymbolNode) :
       add-pin(sn, Ref(`p), Point(0.0, 0.0), name = "pin-1")
     defmethod build-artwork (this, sn:SymbolNode) :
       ; radii
-      val r1 = 0.5
-      val r2 = 1.0
       if copper(mh) is One : ; plated case: circles are filled
         add-glyph(sn, shift-up * Circle(r2))
         add-glyph(sn, shift-up * Circle(r1))
