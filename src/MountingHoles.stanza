@@ -45,6 +45,7 @@ public defstruct MountingHole :
     default => None()
   paste:Maybe<Shape> with:
     default => None()
+  symbol:MHSymbol
 with:
   constructor => #MountingHole
 
@@ -57,7 +58,12 @@ public defn MountingHole (
   silk-outline:SilkscreenOutline|False = false
   sm-expand?:Double|False = false
   paste:Shape|False = false
-) : #MountingHole(hole, to-maybe(copper), to-maybe(silk-outline), to-maybe(sm-expand?), to-maybe(paste))
+  symbol:MHSymbol|False = false
+) : 
+  val symbol* = 
+    match(symbol:MHSymbol) : symbol
+    else : MHSymbol(plated? = copper is Shape)
+  #MountingHole(hole, to-maybe(copper), to-maybe(silk-outline), to-maybe(sm-expand?), to-maybe(paste), symbol*)
 
 ; TODO: default offset value; I made this up
 val DEFAULT-OFFSET = 3.0
@@ -148,7 +154,7 @@ defn mounting-hole (mh:MountingHole) :
       [p       | p           ]
 
     ; Schematic symbol
-    assign-symbol(create-symbol(MHSymbol(mh)))
+    assign-symbol(create-symbol(symbol(mh)))
 
     ; Assign landpattern
     assign-landpattern(mounting-hole-pkg(mh))
@@ -203,27 +209,60 @@ defn plated-mounting-hole-pkg (mh:MountingHole) :
 ; Symbol helpers
 ;=========================
 
-; Schematic symbol for mounting holes
-; If hole is plated, symbol is filled in
-; TODO : is there a more idiomatic way to do this?
-defn MHSymbol (mh:MountingHole) -> SymbolDefn :
-  val r1 = 0.25
-  val r2 = 0.5
-  val shift-up = Pose(Point(0.0, r2), 0.0, false)
-  new SymbolDefn :
-    defmethod name (this) -> String : "MountingHole"
-    defmethod build-pins (this, sn:SymbolNode) :
-      add-pin(sn, Ref(`p), Point(0.0, 0.0), name = "pin-1")
-    defmethod build-artwork (this, sn:SymbolNode) :
-      ; radii
-      if copper(mh) is One : ; plated case: circles are filled
-        add-glyph(sn, shift-up * Circle(r2))
-        add-glyph(sn, shift-up * Circle(r1))
-      else : ; non-plated: use lines
-        val arc1 = Arc(Point(0.0, 0.0), r1, 0.0, 360.0)
-        val arc2 = Arc(Point(0.0, 0.0), r2, 0.0, 360.0)
-        val lw = 0.05 ; symbol-line-width(mh)
-        add-glyph(sn, shift-up * Polyline(lw, [arc1]))
-        add-glyph(sn, shift-up * Polyline(lw, [arc2]))
-    defmethod build-params (this, sn:SymbolNode) :
-      false
+doc: \<DOC>
+TODO
+<DOC>
+public deftype MHSymbol <: SymbolDefn
+
+doc: \<DOC>
+TODO
+<DOC>
+public defmulti inner-radius (mh:MHSymbol) -> Double
+
+doc: \<DOC>
+TODO
+<DOC>
+public defmulti outer-radius (mh:MHSymbol) -> Double
+
+defmethod build-pins (mh:MHSymbol, sn:SymbolNode) :
+  add-pin(sn, Ref(`p), Point(0.0, 0.0), name = "pin-1")
+defmethod build-params (mh:MHSymbol, sn:SymbolNode) : ; TODO : add reference designator
+  false
+
+; helper
+defn shift-up (mh:MHSymbol) : Pose(Point(0.0, outer-radius(mh)), 0.0, false)
+
+; Plated
+doc: \<DOC>
+TODO
+<DOC>
+public defstruct PlatedMHSymbol <: MHSymbol :
+  inner-radius:Double with: (as-method => true, default => 0.25)
+  outer-radius:Double with: (as-method => true, default => 0.5)
+
+defmethod name (mh:PlatedMHSymbol) : "PlatedMountingHole"
+defmethod build-artwork (mh:PlatedMHSymbol, sn:SymbolNode) :
+  add-glyph(sn, shift-up(mh) * Circle(inner-radius(mh)))
+  add-glyph(sn, shift-up(mh) * Circle(outer-radius(mh)))
+
+; Nonplated
+doc: \<DOC>
+TODO
+<DOC>
+public defstruct NonPlatedMHSymbol <: MHSymbol :
+  inner-radius:Double with: (as-method => true, default => 0.25)
+  outer-radius:Double with: (as-method => true, default => 0.5)
+  line-width:Double with: (default => 0.05)
+
+defmethod name (mh:NonPlatedMHSymbol) : "NonPlatedMountingHole"
+defmethod build-artwork (mh:NonPlatedMHSymbol, sn:SymbolNode) :
+  val arc1 = Arc(Point(0.0, 0.0), inner-radius(mh), 0.0, 360.0)
+  val arc2 = Arc(Point(0.0, 0.0), outer-radius(mh), 0.0, 360.0)
+  val lw = line-width(mh)
+  add-glyph(sn, shift-up(mh) * Polyline(lw, [arc1]))
+  add-glyph(sn, shift-up(mh) * Polyline(lw, [arc2]))
+
+defn MHSymbol (-- plated?:True|False) :
+  if plated? : PlatedMHSymbol()
+  else : NonPlatedMHSymbol()
+
