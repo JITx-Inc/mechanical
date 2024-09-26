@@ -3,13 +3,13 @@ defpackage mechanical/MountingHoles:
   import core
   import jitx
   import jitx/commands
+  import maybe-utils
 
   import jsl/ensure
   import jsl/landpatterns
   import jsl/geometry/basics
   import jsl/symbols/framework
   import jsl/errors
-  ;import jsl/geometry/box
 
 
 
@@ -23,7 +23,6 @@ public defstruct SilkscreenOutline :
     ensure => ensure-positive!
   silk-width:Double with:
     ensure => ensure-positive!
-
 
 public defstruct MountingHole :
   hole:Shape
@@ -41,8 +40,16 @@ public defstruct MountingHole :
     default => None()
   paste:Maybe<Shape> with:
     default => None()
-  symbol-line-width:Double with:
-    default => 0.05
+with:
+  constructor => #MountingHole
+
+public defn MountingHole (
+  hole:Shape --
+  copper:Shape|False = false
+  silk-outline:SilkscreenOutline|False = false
+  sm-expand?:Double|False = false
+  paste:Shape|False = false
+) : #MountingHole(hole, to-maybe(copper), to-maybe(silk-outline), to-maybe(sm-expand?), to-maybe(paste))
 
 ; TODO: default offset value; I made this up
 val DEFAULT-OFFSET = 3.0
@@ -168,7 +175,7 @@ defn MHSymbol (mh:MountingHole) -> SymbolDefn :
       else : ; non-plated: use lines
         val arc1 = Arc(Point(0.0, 0.0), r1, 0.0, 360.0)
         val arc2 = Arc(Point(0.0, 0.0), r2, 0.0, 360.0)
-        val lw = symbol-line-width(mh)
+        val lw = 0.05 ; symbol-line-width(mh)
         add-glyph(sn, shift-up * Polyline(lw, [arc1]))
         add-glyph(sn, shift-up * Polyline(lw, [arc2]))
     defmethod build-params (this, sn:SymbolNode) :
