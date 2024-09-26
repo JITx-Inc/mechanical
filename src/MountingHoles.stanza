@@ -6,24 +6,29 @@ defpackage mechanical/MountingHoles:
   import maybe-utils
 
   import jsl/ensure
-  import jsl/landpatterns
+  import jsl/landpatterns with :
+    prefix(SilkscreenOutline) => UNUSED#
   import jsl/geometry/basics
   import jsl/symbols/framework
   import jsl/errors
-
-
 
 ; I want to be able to support 2 types of
 ;   mounting hole:
 ; 1.  Non-plated Through-holes
 ; 2.  Plated Grounding Through-holes
 
+doc: \<DOC>
+TODO
+<DOC>
 public defstruct SilkscreenOutline :
   diam:Double with:
     ensure => ensure-positive!
   silk-width:Double with:
     ensure => ensure-positive!
 
+doc: \<DOC>
+TODO
+<DOC>
 public defstruct MountingHole :
   hole:Shape
   doc: \<DOC>
@@ -43,6 +48,9 @@ public defstruct MountingHole :
 with:
   constructor => #MountingHole
 
+doc: \<DOC>
+TODO
+<DOC>
 public defn MountingHole (
   hole:Shape --
   copper:Shape|False = false
@@ -56,17 +64,23 @@ val DEFAULT-OFFSET = 3.0
 
 ; TODO: more flexible offset?
 ;       maybe have separate x- and y-offsets?
+
+; TODO : need to skip "middle" coordinates -- only edges
+; should get mounting holes
+; e.g. point(1,1) in a 3x3 grid should never get one?
+
+doc: \<DOC>
+TODO
+<DOC>
 public defn add-mounting-holes (
-    get-mounting-hole:(Int, Int) -> Maybe<MountingHole> --
+    get-mounting-hole:(Int, Int) -> Maybe<MountingHole> 
+    board-shape:Shape --
     offset:Double = DEFAULT-OFFSET
     num-rows:Int = 2
     num-columns:Int = 2) :
   if num-rows < 2 : throw(ArgumentError("num-rows must be at least 2"))
   if num-columns < 2 : throw(ArgumentError("num-columns must be at least 2"))
-  val board-shape =
-    match(get-board()) :
-      (b:Board) : get-boundary(b)
-      (otherwise) : throw(Exception("add-mounting-holes: board has not yet been set."))
+
   val d = dims(board-shape)
   val board = Rectangle(x(d), y(d))
   inside pcb-module :
@@ -82,6 +96,23 @@ public defn add-mounting-holes (
           place(hole) at l on Top
         (otherwise) : false
 
+doc: \<DOC>
+Wrapper for jitx > 3.18 that computes board shape automatically 
+<DOC>
+public defn add-mounting-holes (
+    get-mounting-hole:(Int, Int) -> Maybe<MountingHole> --
+    offset:Double = DEFAULT-OFFSET
+    num-rows:Int = 2
+    num-columns:Int = 2) :
+  val board-shape =
+    match(get-board()) :
+      (b:Board) : get-boundary(b)
+      (otherwise) : throw(Exception("add-mounting-holes: board has not yet been set."))
+  add-mounting-holes(get-mounting-hole, board-shape, offset = offset, num-rows = num-rows, num-columns = num-columns)
+
+doc: \<DOC>
+Requires jitx > 3.18 to compute board-shape
+<DOC>
 public defn add-mounting-holes (
     mounting-hole:MountingHole --
     offset:Double = DEFAULT-OFFSET
@@ -90,13 +121,26 @@ public defn add-mounting-holes (
   within (x, y) = add-mounting-holes(offset = offset, num-rows = num-rows, num-columns = num-columns) :
     One(mounting-hole)
 
-; TODO : maybe an API that takes positions?
+doc: \<DOC>
+TODO
+<DOC>
+public defn add-mounting-holes (
+    mounting-hole:MountingHole 
+    board-shape:Shape --
+    offset:Double = DEFAULT-OFFSET
+    num-rows:Int = 2
+    num-columns:Int = 2) :
+  within (x, y) = add-mounting-holes(board-shape, offset = offset, num-rows = num-rows, num-columns = num-columns) :
+    One(mounting-hole)
 
-; Assume row-major traversal (ie the grid-locs default)
+; Helper for generating a sequence of coordinates given grid dimensions
+; Assumes row-major traversal, which is the default for grid-locs 
+; top-left corner is (0,0)
 defn grid-coords (nrows:Int, ncols:Int) -> Seq<[Int,Int]> :
   for y in 0 to ncols seq-cat :
     for x in 0 to ncols seq : [x, y]
 
+; Mounting hole component
 defn mounting-hole (mh:MountingHole) :
   pcb-component comp :
     pin-properties:
@@ -110,14 +154,11 @@ defn mounting-hole (mh:MountingHole) :
     assign-landpattern(mounting-hole-pkg(mh))
   comp
 
-defn val?<?T> (x:Maybe<?T>) -> T|False :
-  match(x:One) : value(x)
-  else : false
-
 ;=========================
 ; Landpattern helpers
 ;=========================
 
+; Add a silkscreen layer to the mounting hole landpattern
 defn make-silkscreen (mh:MountingHole) :
   inside pcb-landpattern :
     match(silk-outline(mh)) :
@@ -125,10 +166,12 @@ defn make-silkscreen (mh:MountingHole) :
         layer(Silkscreen("mounting-hole", Top)) = value(silk)
       (otherwise) : false ; do nothing
 
+; Landpattern dispatcher
 defn mounting-hole-pkg (mh:MountingHole) :
   match(copper(mh):One) : plated-mounting-hole-pkg(mh)
   else : non-plated-mounting-hole-pkg(mh)
 
+; Landpattern for non-plated mounting holes
 defn non-plated-mounting-hole-pkg (mh:MountingHole) :
   ; TODO : does non-plated pad need paste?
   pcb-landpattern lp :
@@ -140,6 +183,7 @@ defn non-plated-mounting-hole-pkg (mh:MountingHole) :
     make-silkscreen(mh)
   lp
 
+; Landpattern for plated mounting holes
 defn plated-mounting-hole-pkg (mh:MountingHole) :
   pcb-landpattern lp :
     val sm =
@@ -159,6 +203,9 @@ defn plated-mounting-hole-pkg (mh:MountingHole) :
 ; Symbol helpers
 ;=========================
 
+; Schematic symbol for mounting holes
+; If hole is plated, symbol is filled in
+; TODO : is there a more idiomatic way to do this?
 defn MHSymbol (mh:MountingHole) -> SymbolDefn :
   val r1 = 0.25
   val r2 = 0.5

@@ -1,4 +1,4 @@
 name = "mechanical"
 version = "0.1.0"
 [dependencies]
-jsl = { git = "JITx-Inc/jsl", version = "0.6.1"}
+jsl = { git = "JITx-Inc/jsl", version = "0.6.2" }
