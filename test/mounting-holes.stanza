@@ -239,7 +239,7 @@ pcb-module rgmii-1000BaseT-uut:
   val mh-non-plated = MountingHole(Circle(0.5))
   val mh-plated = MountingHole(Circle(0.5), copper = Circle(0.5))
   within (x,y) = add-mounting-holes() :
-    if y == 0 : One(mh-plated)
+    if [x, y] == [1,0] : One(mh-plated) 
     else : One(mh-non-plated)
 
 
