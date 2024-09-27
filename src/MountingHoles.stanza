@@ -17,9 +17,7 @@ defpackage mechanical/MountingHoles:
 ; 1.  Non-plated Through-holes
 ; 2.  Plated Grounding Through-holes
 
-doc: \<DOC>
-TODO
-<DOC>
+;TODO replace with jsl
 public defstruct SilkscreenOutline :
   diam:Double with:
     ensure => ensure-positive!
@@ -27,7 +25,9 @@ public defstruct SilkscreenOutline :
     ensure => ensure-positive!
 
 doc: \<DOC>
-TODO
+A struct parameterizing mounting holes.
+Constructor is `#MountingHole`, or the
+other convenience constructors.
 <DOC>
 public defstruct MountingHole :
   hole:Shape
@@ -38,11 +38,27 @@ public defstruct MountingHole :
   <DOC>
   copper:Maybe<Shape> with:
     default => None()
+  doc: \<DOC>
+  Silkscreen outline.
+  If this value is `None()`, then the hole will not
+  have an outline.
+  <DOC>
   silk-outline:Maybe<SilkscreenOutline> with:
     default => None()
+  doc: \<DOC>
+  Amount by which the soldermask should expand
+  relative to the copper layer.
+  If this value is `None()`, then the hole will
+  not have soldermask.
+  <DOC>
   sm-expand?:Maybe<Double> with:
     ensure => ensure-non-negative!
     default => None()
+  doc: \<DOC>
+  Shape of the paste layer.
+  If this value is `None()`, then the hole will be
+  unplated.
+  <DOC>
   paste:Maybe<Shape> with:
     default => None()
   symbol:MHSymbol
@@ -50,7 +66,14 @@ with:
   constructor => #MountingHole
 
 doc: \<DOC>
-TODO
+A constructor for the MountingHole type
+
+@param hole The shape of the hole
+@param copper The shape of the copper layer. Optional if the hole should not be plated.
+@param silk-outline A `SilkscreenOutline`. Optional.
+@param sm-expand? The amount by which to expand the soldermask layer relative to the hole. Optional.
+@param paste The shape of the paste layer. Optional.
+@param symbol An MHSymbol value parameterizing the schematic symbol. Optional, it will default to either the built-in plated or non-plated symbol based on the `copper` argument.
 <DOC>
 public defn MountingHole (
   hole:Shape --
@@ -59,8 +82,8 @@ public defn MountingHole (
   sm-expand?:Double|False = false
   paste:Shape|False = false
   symbol:MHSymbol|False = false
-) : 
-  val symbol* = 
+) :
+  val symbol* =
     match(symbol:MHSymbol) : symbol
     else : MHSymbol(plated? = copper is Shape)
   #MountingHole(hole, to-maybe(copper), to-maybe(silk-outline), to-maybe(sm-expand?), to-maybe(paste), symbol*)
@@ -71,39 +94,73 @@ val DEFAULT-OFFSET = 3.0
 ; TODO: more flexible offset?
 ;       maybe have separate x- and y-offsets?
 
-; TODO : need to skip "middle" coordinates -- only edges
-; should get mounting holes
-; e.g. point(1,1) in a 3x3 grid should never get one?
-
 doc: \<DOC>
-TODO
+Add mounting holes to a pcb-module
+
+@param get-mounting-hole A function computing a `MountingHole` from grid coordinates. Return type is a `Maybe` in order to omit holes at a given point.
+@param grid-planner A `GridPlanner` describing the abstract grid on which mounting holes will be placed.
 <DOC>
 public defn add-mounting-holes (
-    get-mounting-hole:(Int, Int) -> Maybe<MountingHole> 
+  get-mounting-hole:(Int, Int) -> Maybe<MountingHole>
+  grid-planner:GridPlanner
+  ) -> False :
+
+  ;val d = dims(board-shape)
+  ;val board = Rectangle(x(d), y(d))
+  inside pcb-module :
+    ;val w = width(board)
+    ;val h = height(board)
+    ;val dx = (w - (2.0 * offset)) / to-double(num-columns - 1)
+    ;val dy = (h - (2.0 * offset)) / to-double(num-rows - 1)
+    ;for (l in grid-locs(num-rows, num-columns, dx, dy), pos in grid-coords(num-rows, num-columns)) do :
+    for pos in grid(grid-planner) :
+      match(get-mounting-hole(column(pos), row(pos))) :
+        (h:One) :
+          inst hole : mounting-hole(value(h))
+          place(hole) at pose(pos) on Top
+        (otherwise) : false
+
+doc: \<DOC>
+Add mounting holes to a pcb-module
+
+@param get-mounting-hole A function computing a `MountingHole` from grid coordinates. Return type is a `Maybe` in order to omit holes at a given point.
+@param board-shape The shape of the board
+@param offset The amount by which holes should be inset from the board edge. Will be used for vertical and horizontal offsets. Default value is 3.0
+@param num-rows Number of rows in the grid of mounting holes. Default is 2.
+@param num-columns Number of columns in the grid of mounting holes. Default is 2.
+<DOC>
+public defn add-mounting-holes (
+    get-mounting-hole:(Int, Int) -> Maybe<MountingHole>
     board-shape:Shape --
     offset:Double = DEFAULT-OFFSET
     num-rows:Int = 2
     num-columns:Int = 2) :
+
   if num-rows < 2 : throw(ArgumentError("num-rows must be at least 2"))
   if num-columns < 2 : throw(ArgumentError("num-columns must be at least 2"))
-
   val d = dims(board-shape)
   val board = Rectangle(x(d), y(d))
-  inside pcb-module :
-    val w = width(board)
-    val h = height(board)
-    val dx = (w - (2.0 * offset)) / to-double(num-columns - 1)
-    val dy = (h - (2.0 * offset)) / to-double(num-rows - 1)
-    for (l in grid-locs(num-rows, num-columns, dx, dy), pos in grid-coords(num-rows, num-columns)) do :
-      val [x, y] = pos
-      match(get-mounting-hole(x, y)) :
-        (h:One) :
-          inst hole : mounting-hole(value(h))
-          place(hole) at l on Top
-        (otherwise) : false
+  val w = width(board)
+  val h = height(board)
+  val dx = (w - (2.0 * offset)) / to-double(num-columns - 1)
+  val dy = (h - (2.0 * offset)) / to-double(num-rows - 1)
+
+  val gp = GridPlanner(
+    pitch = Dims(dx, dy)
+    columns = num-columns
+    rows = num-rows
+  )
+  add-mounting-holes(get-mounting-hole, gp)
+
 
 doc: \<DOC>
-Wrapper for jitx > 3.18 that computes board shape automatically 
+Add mounting holes to a pcb-module
+Usable with jitx >= 3.18; computes board shape automatically.
+
+@param get-mounting-hole A function computing a `MountingHole` from grid coordinates. Return type is a `Maybe` in order to omit holes at a given point.
+@param offset The amount by which holes should be inset from the board edge. Will be used for vertical and horizontal offsets. Default value is 3.0
+@param num-rows Number of rows in the grid of mounting holes. Default is 2.
+@param num-columns Number of columns in the grid of mounting holes. Default is 2.
 <DOC>
 public defn add-mounting-holes (
     get-mounting-hole:(Int, Int) -> Maybe<MountingHole> --
@@ -117,7 +174,13 @@ public defn add-mounting-holes (
   add-mounting-holes(get-mounting-hole, board-shape, offset = offset, num-rows = num-rows, num-columns = num-columns)
 
 doc: \<DOC>
-Requires jitx > 3.18 to compute board-shape
+Add mounting holes to a pcb-module.
+Usable with jitx >= 3.18; computes board shape automatically.
+
+@param mounting-hole A MountingHole parameterizing all holes. Will generate holes uniformly according to a grid on the board.
+@param offset The amount by which holes should be inset from the board edge. Will be used for vertical and horizontal offsets. Default value is 3.0
+@param num-rows Number of rows in the grid of mounting holes. Default is 2.
+@param num-columns Number of columns in the grid of mounting holes. Default is 2.
 <DOC>
 public defn add-mounting-holes (
     mounting-hole:MountingHole --
@@ -128,23 +191,22 @@ public defn add-mounting-holes (
     One(mounting-hole)
 
 doc: \<DOC>
-TODO
+Add mounting holes to a pcb-module.
+Usable with jitx >= 3.18; computes board shape automatically.
+
+@param mounting-hole A MountingHole parameterizing all holes. Will generate holes uniformly according to a grid on the board.
+@param offset The amount by which holes should be inset from the board edge. Will be used for vertical and horizontal offsets. Default value is 3.0
+@param num-rows Number of rows in the grid of mounting holes. Default is 2.
+@param num-columns Number of columns in the grid of mounting holes. Default is 2.
 <DOC>
 public defn add-mounting-holes (
-    mounting-hole:MountingHole 
+    mounting-hole:MountingHole
     board-shape:Shape --
     offset:Double = DEFAULT-OFFSET
     num-rows:Int = 2
     num-columns:Int = 2) :
   within (x, y) = add-mounting-holes(board-shape, offset = offset, num-rows = num-rows, num-columns = num-columns) :
     One(mounting-hole)
-
-; Helper for generating a sequence of coordinates given grid dimensions
-; Assumes row-major traversal, which is the default for grid-locs 
-; top-left corner is (0,0)
-defn grid-coords (nrows:Int, ncols:Int) -> Seq<[Int,Int]> :
-  for y in 0 to ncols seq-cat :
-    for x in 0 to ncols seq : [x, y]
 
 ; Mounting hole component
 defn mounting-hole (mh:MountingHole) :
@@ -160,9 +222,13 @@ defn mounting-hole (mh:MountingHole) :
     assign-landpattern(mounting-hole-pkg(mh))
   comp
 
+
+
 ;=========================
 ; Landpattern helpers
 ;=========================
+
+; TODO : use virtual landpattern, jsl silkscreen
 
 ; Add a silkscreen layer to the mounting hole landpattern
 defn make-silkscreen (mh:MountingHole) :
@@ -205,54 +271,68 @@ defn plated-mounting-hole-pkg (mh:MountingHole) :
     make-silkscreen(mh)
   lp
 
+
+
+
 ;=========================
 ; Symbol helpers
 ;=========================
 
 doc: \<DOC>
-TODO
+An abstract type parameterizing schematic symbols for mounting holes
+All symbols will be two concentric circles.
 <DOC>
 public deftype MHSymbol <: SymbolDefn
 
 doc: \<DOC>
-TODO
+Radius of the inner circle
 <DOC>
 public defmulti inner-radius (mh:MHSymbol) -> Double
 
 doc: \<DOC>
-TODO
+Radius of the outer circle
 <DOC>
 public defmulti outer-radius (mh:MHSymbol) -> Double
 
 defmethod build-pins (mh:MHSymbol, sn:SymbolNode) :
   add-pin(sn, Ref(`p), Point(0.0, 0.0), name = "pin-1")
-defmethod build-params (mh:MHSymbol, sn:SymbolNode) : ; TODO : add reference designator
+
+; TODO : add reference designator
+defmethod build-params (mh:MHSymbol, sn:SymbolNode) : 
   false
 
 ; helper
 defn shift-up (mh:MHSymbol) : Pose(Point(0.0, outer-radius(mh)), 0.0, false)
 
-; Plated
 doc: \<DOC>
-TODO
+A plated mounting hole symbol
 <DOC>
 public defstruct PlatedMHSymbol <: MHSymbol :
-  inner-radius:Double with: (as-method => true, default => 0.25)
-  outer-radius:Double with: (as-method => true, default => 0.5)
+  inner-radius:Double with:
+    as-method => true
+    default => 0.25
+  outer-radius:Double with:
+    as-method => true
+    default => 0.5
 
 defmethod name (mh:PlatedMHSymbol) : "PlatedMountingHole"
 defmethod build-artwork (mh:PlatedMHSymbol, sn:SymbolNode) :
   add-glyph(sn, shift-up(mh) * Circle(inner-radius(mh)))
   add-glyph(sn, shift-up(mh) * Circle(outer-radius(mh)))
 
-; Nonplated
 doc: \<DOC>
-TODO
+A non-plated mounting hole symbol.
 <DOC>
 public defstruct NonPlatedMHSymbol <: MHSymbol :
-  inner-radius:Double with: (as-method => true, default => 0.25)
-  outer-radius:Double with: (as-method => true, default => 0.5)
-  line-width:Double with: (default => 0.05)
+  inner-radius:Double with:
+    as-method => true
+    default => 0.25
+  outer-radius:Double with:
+    as-method => true
+    default => 0.5
+  line-width:Double with:
+    default => 0.05
+    ensure => ensure-positive!
 
 defmethod name (mh:NonPlatedMHSymbol) : "NonPlatedMountingHole"
 defmethod build-artwork (mh:NonPlatedMHSymbol, sn:SymbolNode) :
