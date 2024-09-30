@@ -245,7 +245,7 @@ pcb-module rgmii-1000BaseT-uut:
 
 set-global-query-defaults!(min-stock = 1, mounting = "smd", case = ["0201"])
 set-current-design("mounting-hole-example")
-set-board(an-example-board(bs))
+set-board(an-example-board(loc(1.0, -10.0) * bs))
 
 
 ; Set the schematic sheet size
