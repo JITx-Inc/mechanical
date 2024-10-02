@@ -6,8 +6,7 @@ defpackage mechanical/MountingHoles:
   import maybe-utils
 
   import jsl/ensure
-  import jsl/landpatterns with :
-    prefix(SilkscreenOutline) => UNUSED#
+  import jsl/landpatterns
   import jsl/geometry/basics
   import jsl/symbols/framework
   import jsl/errors
@@ -16,16 +15,6 @@ defpackage mechanical/MountingHoles:
 ;   mounting hole:
 ; 1.  Non-plated Through-holes
 ; 2.  Plated Grounding Through-holes
-
-;TODO replace with jsl
-public defstruct SilkscreenOutline :
-  diam:Double with:
-    ensure => ensure-positive!
-  silk-width:Double with:
-    ensure => ensure-positive!
-with:
-  printer => true
-  keyword-constructor => true
 
 doc: \<DOC>
 A struct parameterizing mounting holes.
@@ -140,7 +129,7 @@ public defn add-mounting-holes (
   val d = dims(board-shape)
   val dx = (x(d) - (2.0 * x-offset)) / to-double(num-columns - 1)
   val dy = (y(d) - (2.0 * y-offset)) / to-double(num-rows - 1)
-  val center = loc(/center(board-shape)) ; loc(0.0, 0.0)
+  val center = loc(/center(board-shape))
 
   val gp = GridPlanner(
     pitch = Dims(dx, dy)
@@ -230,16 +219,14 @@ defn mounting-hole (mh:MountingHole) :
 ; Landpattern helpers
 ;=========================
 
-; TODO : use virtual landpattern, jsl silkscreen
-
-; Add a silkscreen layer to the mounting hole landpattern
-defn make-silkscreen (mh:MountingHole) :
+; Add a silkscreen layer to the virutal mounting hole landpattern
+defn make-silkscreen (vlp:VirtualLP, mh:MountingHole) :
   inside pcb-landpattern :
     match(silk-outline(mh)) :
-      (silk:One) :
-        layer(Silkscreen("mounting-hole", Top)) = value(silk)
-      (otherwise) : false ; do nothing
-
+      (silk:One<SilkscreenOutline>) : 
+        build-shape(value(silk), vlp)
+      (otherwise) : false
+ 
 ; Landpattern dispatcher
 defn mounting-hole-pkg (mh:MountingHole) :
   match(copper(mh):One) : plated-mounting-hole-pkg(mh)
@@ -247,33 +234,53 @@ defn mounting-hole-pkg (mh:MountingHole) :
 
 ; Landpattern for non-plated mounting holes
 defn non-plated-mounting-hole-pkg (mh:MountingHole) :
-  ; TODO : does non-plated pad need paste?
   pcb-landpattern lp :
-    val sm =
+
+    ; Compute shape of soldermask
+    val soldermask =
       match(sm-expand?(mh)) :
         (x:One) : expand(hole(mh), value(x))
         (otherwise) : false
-    pad p : npth-pad(/hole(mh), sm) at loc(0.0, 0.0)
-    make-silkscreen(mh)
+
+    ; Pad definition
+    val npth-pad-def = npth-pad(/hole(mh), soldermask)
+
+    ; Virtual landpattern components
+    val vlp = VirtualLP()
+    val vpad = VirtualPad(#R(p), npth-pad-def, loc(0.0, 0.0))
+    append(vlp, vpad)
+    add-reference-designator(vlp)
+    make-silkscreen(vlp, mh)
+    make-landpattern(vlp)
   lp
 
 ; Landpattern for plated mounting holes
 defn plated-mounting-hole-pkg (mh:MountingHole) :
   pcb-landpattern lp :
-    val sm =
+
+    ; Compute shape of soldermask
+    val soldermask =
       match(sm-expand?(mh)) :
         (x:One) : expand(hole(mh), value(x))
         (otherwise) : false
+
+    ; Compute shape of paste
     val paste =
       match(/paste(mh)) :
         (p:One) : value(p)
         (otherwise) : false
-    val mh-pad = pth-pad(/hole(mh), value!(/copper(mh)), sm, paste)
-    pad p : mh-pad at loc(0.0, 0.0)
-    make-silkscreen(mh)
+
+    ; Pad definition
+    val mh-pad = pth-pad(/hole(mh), value!(/copper(mh)), soldermask, paste)
+
+    ; Virtual landpattern components
+    val vlp = VirtualLP()
+    val vpad = VirtualPad(#R(p), mh-pad, loc(0.0, 0.0))
+    append(vlp, vpad)
+    add-reference-designator(vlp)
+    make-silkscreen(vlp, mh)
+    make-landpattern(vlp)
   lp
-
-
 
 
 ;=========================
