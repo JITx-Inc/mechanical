@@ -4,4 +4,4 @@ include? ".slm/stanza.proj"  ; Dependencies
 pkg-cache: ".slm/pkg-cache"
 
 packages mechanical/* defined-in "src/"
-
+packages mechanical/examples/* defined-in "./examples/"
