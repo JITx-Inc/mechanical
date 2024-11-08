@@ -1,0 +1,97 @@
+#use-added-syntax(jitx)
+defpackage mechanical/MountingHoles/symbols:
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl
+
+doc: \<DOC>
+An abstract type parameterizing schematic symbols for mounting holes
+All symbols will be two concentric circles.
+<DOC>
+public deftype MHSymbol <: SymbolDefn
+
+doc: \<DOC>
+Radius of the inner circle
+<DOC>
+public defmulti inner-radius (mh:MHSymbol) -> Double
+
+doc: \<DOC>
+Radius of the outer circle
+<DOC>
+public defmulti outer-radius (mh:MHSymbol) -> Double
+
+; TODO : add reference designator
+defmethod build-params (mh:MHSymbol, sn:SymbolNode) :
+  false
+
+; helper
+defn shift-up (mh:MHSymbol) : Pose(Point(0.0, outer-radius(mh)), 0.0, false)
+
+doc: \<DOC>
+A plated mounting hole symbol
+<DOC>
+public defstruct PlatedMHSymbol <: MHSymbol :
+  inner-radius:Double with:
+    as-method => true
+    default => 0.25
+    ensure => ensure-positive!
+  outer-radius:Double with:
+    as-method => true
+    default => 0.5
+    ensure => ensure-positive!
+with:
+  printer => true
+  keyword-constructor => true
+
+defmethod name (mh:PlatedMHSymbol) : "PlatedMountingHole"
+
+defmethod build-pins (mh:PlatedMHSymbol, sn:SymbolNode) :
+  add-pin(sn, PINREF[1], Point(0.0, 0.0), name = "pin-1")
+
+defmethod build-artwork (mh:PlatedMHSymbol, sn:SymbolNode) :
+  add-glyph(sn, shift-up(mh) * Circle(outer-radius(mh)))
+  add-glyph(sn, shift-up(mh) * Circle(inner-radius(mh)))
+
+doc: \<DOC>
+A non-plated mounting hole symbol.
+<DOC>
+public defstruct NonPlatedMHSymbol <: MHSymbol :
+  inner-radius:Double with:
+    as-method => true
+    default => 0.25
+    ensure => ensure-positive!
+  outer-radius:Double with:
+    as-method => true
+    default => 0.5
+    ensure => ensure-positive!
+  line-width:Double with:
+    default => 0.05
+    ensure => ensure-positive!
+with:
+  printer => true
+  keyword-constructor => true
+
+defmethod name (mh:NonPlatedMHSymbol) : "NonPlatedMountingHole"
+defmethod build-artwork (mh:NonPlatedMHSymbol, sn:SymbolNode) :
+  val arc1 = Arc(Point(0.0, 0.0), inner-radius(mh), 0.0, 360.0)
+  val arc2 = Arc(Point(0.0, 0.0), outer-radius(mh), 0.0, 360.0)
+  val lw = line-width(mh)
+  add-glyph(sn, shift-up(mh) * Polyline(lw, [arc1]))
+  add-glyph(sn, shift-up(mh) * Polyline(lw, [arc2]))
+
+defmethod build-pins (mh:NonPlatedMHSymbol, sn:SymbolNode) :
+  ; A non-plated hole has no pins because we can't connect
+  ;  to it.
+  false
+
+doc: \<DOC>
+Mounting Hole Symbol Generator
+@param plated? Booleans that indicates which variant to create
+@return Generator for the requested type.
+<DOC>
+public defn MHSymbol (-- plated?:True|False) -> MHSymbol:
+  if plated? : PlatedMHSymbol()
+  else : NonPlatedMHSymbol()
+

@@ -1,0 +1,133 @@
+#use-added-syntax(jitx)
+defpackage mechanical/MountingHoles/generators:
+
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl
+
+  import mechanical/MountingHoles/landpatterns
+
+
+; TODO: default offset value; I made this up
+val DEFAULT-OFFSET = 3.0
+
+doc: \<DOC>
+Add mounting holes to a pcb-module
+
+@param get-mounting-hole A function computing a `MountingHole` from grid coordinates. Return type is a `Maybe` in order to omit holes at a given point.
+@param grid-planner A `GridPlanner` describing the abstract grid on which mounting holes will be placed.
+<DOC>
+public defn add-mounting-holes (
+  get-mounting-hole:(Int, Int) -> Maybe<Instantiable>
+  grid-planner:GridPlanner
+  ) -> False :
+
+  inside pcb-module :
+    for pos in grid(grid-planner) do:
+      val [x, y] = [column(pos), row(pos)]
+      match(get-mounting-hole(x, y)) :
+        (h:One<Instantiable>) :
+          val name = to-symbol $ to-string("hole-%_-%_" % [x, y])
+          val hole = make-inst(name, value(h), true)
+          ; inst hole : value(h)
+          place(hole) at pose(pos) on Top
+        (otherwise) : false
+
+doc: \<DOC>
+Add mounting holes to a pcb-module
+
+@param get-mounting-hole A function computing a `MountingHole` from grid coordinates. Return type is a `Maybe` in order to omit holes at a given point.
+@param board-shape The shape of the board. Must also be Centerable.
+@param offset The amount by which holes should be inset from the board edge. If a Double is provided, x- and y-offsets will be identical.
+@param num-rows Number of rows in the grid of mounting holes. Default is 2.
+@param num-columns Number of columns in the grid of mounting holes. Default is 2.
+<DOC>
+public defn add-mounting-holes (
+    get-mounting-hole:(Int, Int) -> Maybe<Instantiable>
+    board-shape:Shape&Centerable --
+    offset:Double|Dims = DEFAULT-OFFSET
+    num-rows:Int = 2
+    num-columns:Int = 2) :
+
+  val [x-offset, y-offset] =
+    match(offset) :
+      (offset:Double) : [offset, offset]
+      (offset:Dims) : [x(offset), y(offset)]
+
+  if num-rows < 2 : throw(ArgumentError("num-rows must be at least 2"))
+  if num-columns < 2 : throw(ArgumentError("num-columns must be at least 2"))
+  val d = dims(board-shape)
+  val dx = (x(d) - (2.0 * x-offset)) / to-double(num-columns - 1)
+  val dy = (y(d) - (2.0 * y-offset)) / to-double(num-rows - 1)
+  val center = loc(/center(board-shape))
+
+  val gp = GridPlanner(
+    pitch = Dims(dx, dy)
+    columns = num-columns
+    rows = num-rows
+    pose = center
+  )
+  add-mounting-holes(get-mounting-hole, gp)
+
+
+doc: \<DOC>
+Add mounting holes to a pcb-module
+Usable with jitx >= 3.18; computes board shape automatically.
+
+@param get-mounting-hole A function computing a `MountingHole` from grid coordinates. Return type is a `Maybe` in order to omit holes at a given point.
+@param offset The amount by which holes should be inset from the board edge. Will be used for vertical and horizontal offsets. Default value is 3.0
+@param num-rows Number of rows in the grid of mounting holes. Default is 2.
+@param num-columns Number of columns in the grid of mounting holes. Default is 2.
+<DOC>
+public defn add-mounting-holes (
+    get-mounting-hole:(Int, Int) -> Maybe<Instantiable> --
+    offset:Double|Dims = DEFAULT-OFFSET
+    num-rows:Int = 2
+    num-columns:Int = 2) :
+  val board-shape =
+    match(get-board()) :
+      (b:Board) :
+        match(get-boundary(b)) :
+          (bound:Shape&Centerable) : bound
+          (otherwise) : throw(Exception("add-mounting-holes: board shape must be a subtype of Centerable."))
+      (otherwise) : throw(Exception("add-mounting-holes: board has not yet been set."))
+  add-mounting-holes(get-mounting-hole, board-shape, offset = offset, num-rows = num-rows, num-columns = num-columns)
+
+doc: \<DOC>
+Add mounting holes to a pcb-module.
+Usable with jitx >= 3.18; computes board shape automatically.
+
+@param mounting-hole A MountingHole parameterizing all holes. Will generate holes uniformly according to a grid on the board.
+@param offset The amount by which holes should be inset from the board edge. If a Double is provided, x- and y-offsets will be identical.
+@param num-rows Number of rows in the grid of mounting holes. Default is 2.
+@param num-columns Number of columns in the grid of mounting holes. Default is 2.
+<DOC>
+public defn add-mounting-holes (
+    mounting-hole:Instantiable --
+    offset:Double|Dims = DEFAULT-OFFSET
+    num-rows:Int = 2
+    num-columns:Int = 2) :
+  within (x, y) = add-mounting-holes(offset = offset, num-rows = num-rows, num-columns = num-columns) :
+    One(mounting-hole)
+
+doc: \<DOC>
+Add mounting holes to a pcb-module.
+Usable with jitx >= 3.18; computes board shape automatically.
+
+@param mounting-hole A MountingHole parameterizing all holes. Will generate holes uniformly according to a grid on the board.
+@param board-shape The Shape of the board. Must also be Centerable.
+@param offset The amount by which holes should be inset from the board edge. Will be used for vertical and horizontal offsets. Default value is 3.0
+@param num-rows Number of rows in the grid of mounting holes. Default is 2.
+@param num-columns Number of columns in the grid of mounting holes. Default is 2.
+<DOC>
+public defn add-mounting-holes (
+    mounting-hole:Instantiable
+    board-shape:Shape&Centerable --
+    offset:Double = DEFAULT-OFFSET
+    num-rows:Int = 2
+    num-columns:Int = 2) :
+  within (x, y) = add-mounting-holes(board-shape, offset = offset, num-rows = num-rows, num-columns = num-columns) :
+    One(mounting-hole)
+

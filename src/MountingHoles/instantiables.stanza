@@ -1,0 +1,89 @@
+#use-added-syntax(jitx)
+defpackage mechanical/MountingHoles/instantiables:
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl
+
+  import mechanical/MountingHoles/landpatterns
+  import mechanical/MountingHoles/symbols
+
+doc: \<DOC>
+Create a Plated Through-Hole Mounting Hole Component
+@param pkg LandPattern Generator
+@param symb Schematic Symbol Generator. By default we use `PlatedMHSymbol`.
+@return Instantiable that can create a mounting hole component in a circuit.
+This instantiable has one port `p[1]` which can connect the mounting hole to a net.
+<DOC>
+public defn pth-mounting-hole-component (pkg:PlatedHole -- symb:MHSymbol = PlatedMHSymbol()) -> Instantiable :
+  pcb-component pth-mounting-hole-comp :
+    reference-prefix = "M"
+    pin-properties:
+      [pin:Ref | pads:Ref ...]
+      [p[1]    | p[1]        ]
+
+    assign-symbol $ create-symbol(symb)
+    assign-landpattern $ create-landpattern(pkg)
+
+  pth-mounting-hole-comp
+
+doc: \<DOC>
+Create a Non-Plated Through-hole Mounting Hole Component
+
+@param pkg Landpattern Generator
+@param symb Schematic Symbol Generator. By default we use `NonPlatedMHSymbol`
+@return An instantiable that can create a mounting hole component in a circuit.
+This mounting hole component has no ports and cannot be associated with a net.
+<DOC>
+public defn npth-mounting-hole-component (pkg:NonPlatedHole -- symb:MHSymbol = NonPlatedMHSymbol()) -> Instantiable :
+  pcb-component npth-mounting-hole-comp :
+    reference-prefix = "M"
+    assign-symbol $ create-symbol(symb)
+    assign-landpattern $ create-landpattern(pkg)
+
+  npth-mounting-hole-comp
+
+
+doc: \<DOC>
+Construct a plated through-hole mounting hole instantiable.
+
+@param pkg Plated Hole Landpattern Generator
+@param symb Schematic Symbol Generator - by default this function uses `PlatedMHSymbol()`
+@param via-cage Optional via cage to apply to the plated mounting hole. If the
+vias will be placed inside a pad - then you will need to use a `via-in-pad` defined via.
+@return `pcb-module` instantiable with a single port `p[1]` that can connect it to a
+net in a circuit.
+<DOC>
+public defn pth-mounting-hole (pkg:PlatedHole -- symb:MHSymbol = PlatedMHSymbol(), via-cage:ViaGroundCage = ?) -> Instantiable:
+
+  pcb-module mounting-hole-mod :
+    port p : pin[[1]]
+
+    val pose = loc(0.0, 0.0)
+    inst HOLE :  pth-mounting-hole-component(pkg, symb = symb)
+    place(HOLE) at pose on Top
+
+    net TERM (self.p[1], HOLE.p[1])
+
+    match(via-cage):
+      (_:None): false
+      (given:One<ViaGroundCage>):
+        make-ground-cage(value(given), TERM, pose = pose)
+
+  mounting-hole-mod
+
+doc: \<DOC>
+Construct a Non-plated Hole Instantiable.
+
+This function constructs a `pcb-component` instantiable for
+a non-plated hole.
+
+This function is primarily a helper function to have a more consistent
+function name similar to `pth-mounting-hole`.
+
+@param pkg LandPattern Generator
+@param symb Schematic Symbol Generator. By default we use `NonPlatedMHSymbol`
+<DOC>
+public defn npth-mounting-hole (pkg:NonPlatedHole -- symb:MHSymbol = NonPlatedMHSymbol()) -> Instantiable :
+  npth-mounting-hole-component(pkg, symb = symb)

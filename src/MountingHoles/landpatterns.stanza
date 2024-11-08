@@ -1,0 +1,411 @@
+#use-added-syntax(jitx)
+defpackage mechanical/MountingHoles/landpatterns:
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl
+
+doc: \<DOC>
+Base type for Mounting Hole Package Generators
+
+This type defines the interface and overrides
+some Package methods to make it easier to construct
+the mounting hole generators.
+<DOC>
+public defstruct MountingHolePackage <: Package:
+  doc: \<DOC>
+  Shape for the non-plated hole cut-out
+
+  The most reasonable shapes are `Circle` and `Capsule`
+  Check with your fabricator before using shapes other than these.
+
+  This shape will be placed at origin of the landpattern.
+  <DOC>
+  hole:Shape
+  doc: \<DOC>
+  Soldermask Opening around the Cutout
+
+  If this value is a `Shape` - then we apply this shape
+  in the soldermask centered at the origin of the landpattern
+  If this value is a `Double` - then we will expand the
+  cutout hole shape by this amount in `mm`.
+
+  The default value is to expand the hole shape by the
+  `SolderMaskRegistration` clearance rule.
+  <DOC>
+  mask:Shape|Double with:
+    default => clearance(current-rules(), SolderMaskRegistration)
+
+  doc: \<DOC>
+  Optional Silkscreen Outline for Non-plated hole
+  If this value is `None()`, then the hole will not
+  have an outline.
+  Default is `None()`.
+  <DOC>
+  silk-outline:Maybe<SilkscreenOutline> with:
+    default => None()
+
+  ; Package Interface
+  doc: \<DOC>
+  DensityLevel - default is {@link DENSITY-LEVEL}
+  <DOC>
+  density-level:DensityLevel with:
+    as-method => true
+    default => DENSITY-LEVEL
+with:
+  printer => true
+  keyword-constructor => true
+
+
+doc: \<DOC>
+PackageBody - by default is {@link NullPackageBody}
+Not used in this landpattern
+<DOC>
+public defmethod package-body (mh:MountingHolePackage) -> PackageBody:
+  NullPackageBody()
+
+doc: \<DOC>
+PadPlanner - by default is {@link NullPadPlanner}
+Not used in this landpattern
+<DOC>
+public defmethod pad-planner (mh:MountingHolePackage) -> PadPlanner:
+  NullPadPlanner()
+
+public defmethod lead-numbering (mh:MountingHolePackage) -> Numbering:
+  NullNumbering()
+
+
+
+doc: \<DOC>
+Default Silkscreen Implementation for Mounting Holes
+
+We apply the `SilkscreenOutline` if it exists.
+<DOC>
+defmethod build-silkscreen (pkg:MountingHolePackage, vp:VirtualLP) -> False:
+  match(silk-outline(pkg)):
+    (_:None): false
+    (given:One<SilkscreenOutline>):
+      build-outline(value(given), vp)
+      ; TODO - I don't want this - I want to create
+      ;   a  `SilkscreenOutline` that combines multiple silkscreen
+      ;   outlines so that we can do something more clever.
+      val va = get-silkscreen-outline!(vp)
+      add-silkscreen-outline(vp, shape(va), side = Bottom)
+
+defmethod build-courtyard (pkg:MountingHolePackage, vp:VirtualLP) -> False:
+  ; NOTE - typically I would put the courtyard generation in the
+  ;   this method but because I want to include the silkscreen,
+  ;   I have to choose a different order.
+  false
+
+defmethod build-keep-out (pkg:MountingHolePackage, vp:VirtualLP) -> False:
+  val excess = courtyard-excess(pkg)
+
+  val overall-shs = to-tuple $ map(shape, get-layers-all(vp))
+  if length(overall-shs) == 0:
+    throw $ ValueError("Non-Plated Hole - Courtyard Outline Cannot be Created because no layer shapes")
+
+  val overall = Union(overall-shs)
+  val outline-base = expand-union(overall, courtyard-excess(pkg))
+  val outline = to-polygon(outline-base, top-level? = true)
+  val hull = convex-hull(outline)
+  ; println("Hull: %_" % [hull])
+  add-artwork(
+    vp,
+    Courtyard(Top),
+    hull,
+    class = "courtyard"
+    )
+
+  build-courtyard-origin(vp, hull)
+  false
+
+
+
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Non Plated Hole
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+doc: \<DOC>
+Non Plated Hole Landpattern Generator
+
+The JITX platform reserves `pcb-pad` for plated
+holes. To create a non-plated hole - we must construct a
+landpattern and use the `LayerSpecifier` primitives.
+
+This generator uses the `Package` framework to construct
+this landpattern.
+<DOC>
+public defstruct NonPlatedHole <: MountingHolePackage :
+  ; MountingHolePackage Interface
+  doc: \<DOC>
+  Shape for the non-plated hole cut-out
+
+  The most reasonable shapes are `Circle` and `Capsule`
+  Check with your fabricator before using shapes other than these.
+
+  This shape will be placed at origin of the landpattern.
+  <DOC>
+  hole:Shape with:
+    as-method => true
+  doc: \<DOC>
+  Soldermask Opening around the Cutout
+
+  If this value is a `Shape` - then we apply this shape
+  in the soldermask centered at the origin of the landpattern
+  If this value is a `Double` - then we will expand the
+  cutout hole shape by this amount in `mm`.
+
+  The default value is to expand the hole shape by the
+  `SolderMaskRegistration` clearance rule.
+  <DOC>
+  mask:Shape|Double with:
+    as-method => true
+    default => clearance(current-rules(), SolderMaskRegistration)
+
+  doc: \<DOC>
+  Optional Silkscreen Outline for Non-plated hole
+  If this value is `None()`, then the hole will not
+  have an outline.
+  Default is `None()`.
+  <DOC>
+  silk-outline:Maybe<SilkscreenOutline> with:
+    as-method => true
+    default => None()
+
+  ; Package Interface
+  doc: \<DOC>
+  Name for the landpattern - default is "NPTH"
+  <DOC>
+  name:String with:
+    as-method => true
+    default => "NPTH"
+  doc: \<DOC>
+  Number of Leads - Default is zero.
+  <DOC>
+  num-leads:Int with:
+    as-method => true
+    default => 0
+
+  doc: \<DOC>
+  Courtyard Excess around the Non Plated Hole
+  The Courtyard is constructed via union of the
+  landpattern geometry and then expanded by this
+  amount. The default is 0.25mm
+  <DOC>
+  courtyard-excess:Double with:
+    as-method => true
+    default => 0.25
+
+  doc: \<DOC>
+  DensityLevel - default is {@link DENSITY-LEVEL}
+  <DOC>
+  density-level:DensityLevel with:
+    as-method => true
+    default => DENSITY-LEVEL
+with:
+  printer => true
+  keyword-constructor => true
+
+defmethod build-pads (pkg:NonPlatedHole, vp:VirtualLP) -> False:
+  ; For Non-Plated Holes - we don't add pads.
+  ;  We add layer data in the landpattern.
+  val m-sh = match(mask(pkg)):
+    (given:Double):
+      expand(hole(pkg), given)
+    (given:Shape):
+      given
+
+  add-cutout(vp, hole(pkg))
+  add-artwork(vp, SolderMask(Top), m-sh)
+  add-artwork(vp, SolderMask(Bottom), m-sh)
+
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; Plated Hole
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+doc: \<DOC>
+Paste Generator Type
+
+This type is used to generate a paste pattern over
+a plated hole.
+
+User would typically implement the `build-shape` method to
+create the paste opening based on the other features of the
+plated hole.
+<DOC>
+public deftype PasteGenerator
+
+public defmulti build-shape (p:PasteGenerator, vp:VirtualLP) -> Shape
+public defmulti build-paste-application (p:PasteGenerator, vp:VirtualLP)
+
+public defmethod build-paste-application (p:PasteGenerator, vp:VirtualLP):
+  val sh = build-shape(p, vp)
+  add-artwork(vp, Paste(Top), sh, class = "paste")
+
+
+doc: \<DOC>
+Plated Hole LandPattern Generator
+
+This generator is similar to
+<DOC>
+public defstruct PlatedHole <: MountingHolePackage:
+  doc: \<DOC>
+  Shaped for the plated copper around the plated hole.
+
+  This shape will be placed at the origin of the landpattern. This
+  shape must be larger than the `hole` shape.
+  <DOC>
+  copper:Shape
+
+  doc: \<DOC>
+  Shape for the non-plated hole cut-out
+
+  The most reasonable shapes are `Circle` and `Capsule`
+  Check with your fabricator before using shapes other than these.
+
+  This shape will be placed at origin of the landpattern.
+  <DOC>
+  hole:Shape with:
+    as-method => true
+
+  doc: \<DOC>
+  Soldermask Opening around the Cutout
+
+  If this value is a `Shape` - then we apply this shape
+  in the soldermask centered at the origin of the landpattern
+  If this value is a `Double` - then we will expand the
+  cutout hole shape by this amount in `mm`.
+
+  The default value is to expand the `copper` shape by the
+  `SolderMaskRegistration` clearance rule.
+  <DOC>
+  mask:Shape|Double with:
+    as-method => true
+    default => clearance(current-rules(), SolderMaskRegistration)
+
+  doc: \<DOC>
+  Optional Paste Application
+  <DOC>
+  paste:Maybe<PasteGenerator> with:
+    default => None()
+
+  doc: \<DOC>
+  Optional Silkscreen Outline for Plated hole
+  If this value is `None()`, then the hole will not
+  have an outline.
+  Default is `None()`.
+  <DOC>
+  silk-outline:Maybe<SilkscreenOutline> with:
+    as-method => true
+    default => None()
+
+  ; Package Interface
+  doc: \<DOC>
+  Name for the landpattern - default is "NPTH"
+  <DOC>
+  name:String with:
+    as-method => true
+    default => "PTH"
+  doc: \<DOC>
+  Number of Leads - Default is zero.
+  <DOC>
+  num-leads:Int with:
+    as-method => true
+    default => 1
+  doc: \<DOC>
+  Courtyard Excess around the Non Plated Hole
+  The Courtyard is constructed via union of the
+  landpattern geometry and then expanded by this
+  amount. The default is 0.25mm
+  <DOC>
+  courtyard-excess:Double with:
+    as-method => true
+    default => 0.25
+  doc: \<DOC>
+  DensityLevel - default is {@link DENSITY-LEVEL}
+  <DOC>
+  density-level:DensityLevel with:
+    as-method => true
+    default => DENSITY-LEVEL
+with:
+  printer => true
+  keyword-constructor => true
+
+defmethod build-pads (pkg:PlatedHole, vp:VirtualLP) -> False:
+  append(vp,
+    VirtualPad(
+      PINREF[1],
+      pth-pad(hole(pkg), copper(pkg), mask(pkg)),
+      loc(0.0, 0.0)
+    )
+  )
+
+  match(paste(pkg)):
+    (given:One<PasteGenerator>):
+      build-paste-application(value(given), vp)
+    (_:None): false
+
+
+doc: \<DOC>
+High Visibility silkscreen marker
+
+This creates a marker pattern in the silkscreen
+that is highly visible and provides easier center
+finding.
+<DOC>
+public defstruct HighVisMarker <: SilkscreenOutline :
+  doc: \<DOC>
+  Marker Shape total diameter in mm
+  <DOC>
+  diam:Double with:
+    ensure => ensure-positive!
+  doc: \<DOC>
+  Internal Diameter for the Marker
+
+  When working with unplated mounting holes, we need to not
+  draw silk to the edge of the hole. This allows us to have
+  an inner radius on the pattern.
+  <DOC>
+  internal-diam:Double with:
+    ensure => ensure-positive!
+    default => 0.0
+  doc: \<DOC>
+  External Circular Arc Line width in mm
+  Default is 0.1mm
+  <DOC>
+  line-width:Double with:
+    ensure => ensure-positive!
+    default => 0.1
+with:
+  printer => true
+  keyword-constructor => true
+
+public defmethod build-shape (s:HighVisMarker, vp:VirtualLP -- side:Side = Top) -> Shape :
+  val R-o = to-radius $ diam(s)
+  val sh = if internal-diam(s) > 0.0:
+    val R-i = to-radius $ internal-diam(s)
+    ; Construct shape with inner arc
+    PolygonWithArcs([
+      Arc(Point(0.0, 0.0), R-i, 0.0, 90.0)
+      Point(0.0, R-o),
+      Arc(Point(0.0, 0.0), R-o, 90.0, -90.0)
+      Point(R-i, 0.0),
+    ])
+  else:
+    ; Construct shape with origin at zero
+    PolygonWithArcs([
+      Point(0.0, 0.0),
+      Point(0.0, R-o),
+      Arc(Point(0.0, 0.0), R-o, 90.0, -90.0)
+    ])
+
+  Union([
+    sh,
+    loc(0.0,0.0,180.0) * sh,
+    Polyline(line-width(s), [Arc(Point(0.0, 0.0), R-o, 0.0, 360.0)])
+  ])
