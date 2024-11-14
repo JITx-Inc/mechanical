@@ -1,0 +1,84 @@
+#use-added-syntax(jitx)
+defpackage mechanical/examples/BoardPlacer:
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl
+  import jsl/examples/landpatterns/board
+
+  import mechanical/MountingHoles
+
+val board-shape = RoundedRectangle(50.0, 50.0, 0.25)
+
+public pcb-via th-vip :
+  name = "generic via-in-pad via"
+  start = LayerIndex(0, Top)
+  stop = LayerIndex(0, Bottom)
+  diameter = 0.600
+  hole-diameter = 0.300
+  type = MechanicalDrill
+  via-in-pad = true
+
+
+public pcb-board test-board (outline:Shape) :
+  stackup = jlcpcb-jlc2313
+  boundary = outline
+  signal-boundary = outline
+  vias = [th-vip]
+
+
+pcb-module test-design:
+  val npth-hole = npth-mounting-hole(
+    NonPlatedHole(
+      hole = Circle(to-radius(3.4)),
+      mask = 0.6,
+      silk-outline = One $ CylinderBodyOutline(
+        ; ISO-7380 - Button Head Socket Cap Screw
+        ;   Metric M3-0.5
+        pkg-body = CylinderBody(
+          diameter = min-max(5.4, 5.7),
+          height = min-max(1.4, 1.65),
+        ),
+        line-width = 0.15,
+        line-clearance = 0.2
+      )
+    )
+  )
+
+  val gnd-hole = pth-mounting-hole(
+    PlatedHole(
+      hole = Circle(to-radius(3.4)),
+      copper = Circle(to-radius(6.0))
+      mask = 0.2,
+    ),
+    via-cage = PolarViaGroundCage(
+      via-def = th-vip,
+      count = 6,
+      radius = 2.5,
+    )
+  )
+
+  within (x, y) = add-mounting-holes(offset = 4.0):
+    One $ if x == 0 and y == 0: ; Upper Left Corner
+      gnd-hole
+    else:
+      npth-hole
+
+
+
+; Set the top level module (the module to be compile into a schematic and PCB)
+set-current-design("HolePlacer-TEST")
+set-rules(default-rules)
+set-board(test-board(board-shape))
+
+set-main-module(test-design)
+
+; Use any helper function from helpers.stanza here. For example:
+; run-check-on-design(my-design)
+
+; View the results
+view-board()
+view-schematic()
+view-design-explorer()
+
