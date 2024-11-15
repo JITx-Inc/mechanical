@@ -1,0 +1,235 @@
+#use-added-syntax(jitx)
+defpackage mechanical/LayerLegend:
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl
+
+
+doc: \<DOC>
+Default Keepout Shape Generator
+
+Constructs a Rectangle shape for the keepout.
+<DOC>
+public defn keepout-rect-shape-gen (d:Dims, a:Anchor) -> Shape:
+  Rectangle(d, anchor = a)
+
+doc: \<DOC>
+Layer Legend Landpattern Generator
+
+This type defines the configurable parameters
+for the layer legend generator.
+
+The layer legend is text geometry created in copper that
+provides the explicit layer ordering of the PCB.
+<DOC>
+public defstruct LayerLegendPackage <: Package:
+  doc: \<DOC>
+  Stackup Layer Count or `LayerStack` instance
+  This value determines how many copper layers are
+  present on the board and how many numbers will be generated.
+  <DOC>
+  layer-data:Int|LayerStack
+  doc: \<DOC>
+  Copper Layer Identifier Text size in mm
+
+  Default is 2.0mm
+  <DOC>
+  text-size:Double with:
+    ensure => ensure-positive!
+    default => 2.0
+  doc: \<DOC>
+  Interlayer Text Spacing in mm
+  This value determines the space between adjacent
+  number labels for each copper layer.
+
+  This value by default is 0.5mm.
+
+  This value can be negative. This is useful when you want to make
+  the representation more compact to save board space. For example, setting
+  this value to `(- text-size)` would cause all of the labels to be on top
+  of one another.
+  <DOC>
+  text-space:Double with:
+    default => 0.5
+  doc: \<DOC>
+  Text Orientation
+  This defines the layout of the text for each layer.
+
+  1.  `Left` - Default value - means 1, 2, 3, ...  from Left => Right on the X axis
+  2.  `Right` - means 1, 2, 3 ... from Right => Left on the X axis
+  3.  `Up` - means 1, 2, 3 ... from Top => Bottom on the Y axis
+  4.  `Down` - mean 1, 2, 3 ... from Bottom => Top on the Y axis.
+  <DOC>
+  text-orient:Dir with:
+    default => Left
+  doc: \<DOC>
+  Define the keepout around the text in mm
+
+  By default, this value is 0.5mm.
+  This value is either:
+
+  1.  Double - expand around the text by at least this much
+  2.  False - No extra keepout is created and individual number labels
+  will have their own font defined outlines.
+  <DOC>
+  keepout-excess:Double|False with:
+    default => 0.5
+  doc: \<DOC>
+  Keepout Shape Generator
+  Function to convert a `Dims` and an `Anchor` to a shape.
+  Default creates a Rectangle.
+  <DOC>
+  keepout-shape-gen:((Dims, Anchor) -> Shape) with:
+    default => keepout-rect-shape-gen
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  ; Package Interfaces
+  ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  doc: \<DOC>
+  Name of the resultant landpattern
+  <DOC>
+  name:String with:
+    as-method => true
+    default => "LayerLegend"
+  doc: \<DOC>
+  Courtyard Excess around the keepout of the layer legend
+  The default is 0.25mm
+  <DOC>
+  courtyard-excess:Double with:
+    as-method => true
+    default => 0.25
+
+  doc: \<DOC>
+  DensityLevel - default is {@link DENSITY-LEVEL}
+  <DOC>
+  density-level:DensityLevel with:
+    as-method => true
+    default => DENSITY-LEVEL
+with:
+  printer => true
+  keyword-constructor => true
+
+
+
+doc: \<DOC>
+PackageBody - by default is {@link NullPackageBody}
+Not used in this landpattern
+<DOC>
+public defmethod package-body (ll:LayerLegendPackage) -> PackageBody:
+  NullPackageBody()
+
+doc: \<DOC>
+PadPlanner - by default is {@link NullPadPlanner}
+Not used in this landpattern
+<DOC>
+public defmethod pad-planner (ll:LayerLegendPackage) -> PadPlanner:
+  NullPadPlanner()
+
+public defmethod lead-numbering (ll:LayerLegendPackage) -> Numbering:
+  NullNumbering()
+
+doc: \<DOC>
+Create the text label used in the layer legend
+
+User can override this method to create a different text shape object as desired.
+@param ll Package object
+@param content Copper layer id as a string. Typically this is a number from 1 to N.
+@param pose Location for the center of the text label.
+<DOC>
+public defmulti create-text-label (ll:LayerLegendPackage, content:String, pose:Pose) -> Shape:
+  Text(content, text-size(ll), C, pose)
+
+public defmethod build-pads (ll:LayerLegendPackage, vp:VirtualLP) -> False:
+
+  val layer-cnt = match(layer-data(ll)):
+    (cnt:Int): cnt
+    (ls:LayerStack): get-conductor-count(ls)
+
+  val tsize = text-size(ll)
+  val pitch = text-space(ll)
+  val period = tsize + pitch
+  val total = to-double(layer-cnt - 1) * period
+  defn get-pose (orient:Dir, i:Int) -> Pose:
+    val offset = to-double(i) * period
+    match(orient):
+      (o:Left):
+        loc(offset, 0.0)
+      (o:Right):
+        loc(total - offset, 0.0)
+      (o:Up):
+        loc(0.0, offset)
+      (o:Down):
+        loc(0.0, total - offset)
+
+  val text-shs = for i in 0 to layer-cnt seq:
+    val content = to-string("%_" % [i + 1])
+    val pose = get-pose(text-orient(ll), i)
+    val sh = create-text-label(ll, content, pose)
+    add-copper(vp, LayerIndex(i, Top), sh, class = "legend-id")
+    sh
+
+  ; val text-dims = to-tuple $ map(dims, text-shs)
+  val text-dims = to-tuple $ for sh in text-shs seq:
+    dims(sh)
+  val max-text-x = maximum $ map(x, text-dims)
+  val max-text-y = maximum $ map(y, text-dims)
+
+  val shape-func = keepout-shape-gen(ll)
+  val text-bounds = match(text-orient(ll)):
+    (o:Left|Right):
+      val w = max-text-x + period * to-double(layer-cnt - 1)
+      val h = max-text-y
+      loc(max-text-x / -2.0, 0.0) * shape-func(Dims(w, h), W)
+    (o:Up|Down):
+      val w = max-text-x
+      val h = max-text-y + period * to-double(layer-cnt - 1)
+      loc(0.0, max-text-y / -2.0) * shape-func(Dims(w, h), S)
+
+
+  val ko = match(keepout-excess(ll)):
+    (_:False): text-bounds
+    (extra:Double):
+      val ko-sh = expand(text-bounds, extra)
+      add-keepout(vp, ko-sh, end = LayerIndex(0, Bottom), class = "legend")
+      ko-sh
+
+  val co = expand(ko, courtyard-excess(ll))
+  add-artwork(vp, Courtyard(Top), co, class = "courtyard")
+  add-artwork(vp, Courtyard(Bottom), co, class = "courtyard")
+
+public defmethod build-courtyard (ll:LayerLegendPackage, vp:VirtualLP) -> False:
+  ; Cancel default behavior
+  false
+
+
+doc: \<DOC>
+Basic Schematic Symbol for Layer Legend.
+<DOC>
+public pcb-symbol layer-legend-symb:
+  val h = 2.0
+  draw("foreground") = Text("Layer Legend", 1.0, W, loc(0.0, 2.5))
+  draw("foreground") = Text("1", 1.0, W, loc(0.25, 0.0))
+  draw("foreground") = Line(0.1, [Point(1.25, h / 2.0), Point(1.25, h / -2.0)])
+  draw("foreground") = Text("2", 1.0, W, loc(1.6, 0.0))
+  draw("foreground") = Line(0.1, [Point(2.5, h / 2.0), Point(2.5, h / -2.0)])
+  draw("foreground") = Text("...", 1.0, W, loc(2.75, 0.0))
+  draw("background") = LineRectangle(Dims(5.0, 2.0), anchor = W, line-width = 0.1)
+
+
+doc: \<DOC>
+Layer Legend Component Generator
+@param pkg Landpattern Generator for the Layer Legend
+@return Instantiable Component to create the layer legend.
+<DOC>
+public defn layer-legend (pkg:LayerLegendPackage) -> Instantiable:
+  pcb-component layer-legend-comp :
+    reference-prefix = "M"
+
+    assign-symbol(layer-legend-symb)
+    assign-landpattern $ create-landpattern(pkg)
+  layer-legend-comp
+
+
+
+
