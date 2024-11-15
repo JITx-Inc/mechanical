@@ -1,0 +1,54 @@
+#use-added-syntax(jitx)
+defpackage mechanical/examples/LayerLegend:
+  import core
+  import jitx
+  import jitx/commands
+  import jitx/parts
+
+  import jsl
+  import jsl/examples/landpatterns/board
+
+  import mechanical/LayerLegend
+
+val board-shape = RoundedRectangle(50.0, 30.0, 0.25)
+set-global-query-defaults!(min-stock = 1, mounting = "smd", case = ["0603"])
+
+; Custom Layer Legend with Shape Override
+defn custom-keepout (d:Dims, a:Anchor) -> Shape:
+  RoundedRectangle(d, 0.25, anchor = a)
+
+pcb-module test-design:
+  net GND ()
+
+  val num-layers = 4
+  inst ll-left : layer-legend(LayerLegendPackage(layer-data = num-layers, text-orient = Left))
+  inst ll-right : layer-legend(LayerLegendPackage(layer-data = num-layers, text-orient = Right, text-space = 0.75))
+  inst ll-up : layer-legend(LayerLegendPackage(layer-data = num-layers, text-orient = Up, keepout-excess = false, text-space = 0.2))
+  inst ll-down : layer-legend(LayerLegendPackage(layer-data = num-layers, text-orient = Down, keepout-excess = 1.0))
+
+  inst ll-compact : layer-legend(LayerLegendPackage(layer-data = num-layers, text-orient = Left, text-space = -2.0))
+  inst ll-custom-keepout : layer-legend(LayerLegendPackage(layer-data = num-layers, text-orient = Left, keepout-shape-gen = custom-keepout))
+
+  ; inst R : create-resistor(resistance = 10.0e3, precision = (1 %))
+  ; net (R.p[1], GND)
+
+  geom(GND):
+    for i in 0 to num-layers do:
+      copper-pour(LayerIndex(i), isolate = 0.125, rank = 1) = board-shape
+
+
+
+; Set the top level module (the module to be compile into a schematic and PCB)
+set-current-design("LayerLegend-TEST")
+set-rules(default-rules)
+set-board(default-board(board-shape))
+
+set-main-module(test-design)
+
+; Use any helper function from helpers.stanza here. For example:
+; run-check-on-design(my-design)
+
+; View the results
+view-board()
+view-schematic()
+view-design-explorer()
