@@ -91,7 +91,7 @@ defmethod build-silkscreen (pkg:MountingHolePackage, vp:VirtualLP) -> False:
       ;   a  `SilkscreenOutline` that combines multiple silkscreen
       ;   outlines so that we can do something more clever.
       val va = get-silkscreen-outline!(vp)
-      add-silkscreen-outline(vp, shape(va), side = Bottom)
+      add-artwork(vp, Silkscreen("outline", Bottom), shape(va), class = "bottom-outline")
 
 defmethod build-courtyard (pkg:MountingHolePackage, vp:VirtualLP) -> False:
   ; NOTE - typically I would put the courtyard generation in the
@@ -99,7 +99,16 @@ defmethod build-courtyard (pkg:MountingHolePackage, vp:VirtualLP) -> False:
   ;   I have to choose a different order.
   false
 
-defmethod build-keep-out (pkg:MountingHolePackage, vp:VirtualLP) -> False:
+doc: \<DOC>
+Construct the courtyard for the mounting hole
+
+This function uses the convex hull algorithm to construct
+the outline for complex shapes.
+
+This function is primarily extracted from `build-keep-out`
+below to keep it re-usable.
+<DOC>
+defn build-mnt-hole-courtyard (pkg:MountingHolePackage, vp:VirtualLP):
   val excess = courtyard-excess(pkg)
 
   val overall-shs = to-tuple $ map(shape, get-layers-all(vp))
@@ -119,6 +128,9 @@ defmethod build-keep-out (pkg:MountingHolePackage, vp:VirtualLP) -> False:
     )
 
   build-courtyard-origin(vp, hull)
+
+defmethod build-keep-out (pkg:MountingHolePackage, vp:VirtualLP) -> False:
+  build-mnt-hole-courtyard(pkg, vp)
   false
 
 
@@ -176,6 +188,23 @@ public defstruct NonPlatedHole <: MountingHolePackage :
     as-method => true
     default => None()
 
+  doc: \<DOC>
+  Construct a keepout for the mounting hole
+  This value can be either a `Shape` or a `Double`.
+
+  If the value is a `Double`, this value expands the shape of either
+  the `silk-outline` if not None or the SolderMask layer shape
+  as defined in `mask`.
+
+  If a `Shape` - then that shape is used explicitly.
+
+  By default - this function adds a keepout on all layers
+  of the shape defined by the above specifications.
+
+  <DOC>
+  keep-out:Shape|Double with:
+    default => 0.0
+
   ; Package Interface
   doc: \<DOC>
   Name for the landpattern - default is "NPTH"
@@ -222,6 +251,32 @@ defmethod build-pads (pkg:NonPlatedHole, vp:VirtualLP) -> False:
   add-cutout(vp, hole(pkg))
   add-artwork(vp, SolderMask(Top), m-sh)
   add-artwork(vp, SolderMask(Bottom), m-sh)
+
+
+defn build-keep-out-regions (pkg:NonPlatedHole, vp:VirtualLP):
+  val ko-shape = match(keep-out(pkg)):
+    (s:Shape): s
+    (radial-mod:Double):
+      ; First check if there is a silkscreen outline
+      val so? = get-silkscreen-outline(vp)
+      expand-or-shrink{_, radial-mod} $ match(so?):
+        (_:None):
+          ; Then check for the soldermask
+          val sm-shapes = get-layer-all(vp, SolderMask(Top))
+          if length(sm-shapes) == 0:
+            throw $ ValueError("No Soldermask Opening Found - This is unexpected. Make sure there is a soldermask opening defined before calling 'build-keep-out'")
+          sm-shapes[0]
+        (given:One<VirtualArtwork>):
+          val so-shape = shape $ value $ given
+          convex-hull(so-shape)
+
+  add-artwork(vp, ForbidCopper(LayerIndex(0, Top), LayerIndex(0, Bottom)), ko-shape)
+
+defmethod build-keep-out (pkg:NonPlatedHole, vp:VirtualLP) -> False:
+  build-keep-out-regions(pkg, vp)
+  build-mnt-hole-courtyard(pkg, vp)
+  false
+
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
