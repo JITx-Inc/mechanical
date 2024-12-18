@@ -240,18 +240,7 @@ with:
   keyword-constructor => true
 
 defmethod build-pads (pkg:NonPlatedHole, vp:VirtualLP) -> False:
-  ; For Non-Plated Holes - we don't add pads.
-  ;  We add layer data in the landpattern.
-  val m-sh = match(mask(pkg)):
-    (given:Double):
-      expand(hole(pkg), given)
-    (given:Shape):
-      given
-
-  add-cutout(vp, hole(pkg))
-  add-artwork(vp, SolderMask(Top), m-sh)
-  add-artwork(vp, SolderMask(Bottom), m-sh)
-
+  add-non-plated-hole(vp, hole = hole(pkg), mask = mask(pkg))
 
 defn build-keep-out-regions (pkg:NonPlatedHole, vp:VirtualLP):
   val ko-shape = match(keep-out(pkg)):
