@@ -42,7 +42,8 @@ pcb-module test-design:
         ),
         line-width = 0.15,
         line-clearance = 0.2
-      )
+      ),
+      keep-out = 0.4
     )
   )
 
