@@ -5,3 +5,5 @@ pkg-cache: ".slm/pkg-cache"
 
 packages mechanical/* defined-in "src/"
 packages mechanical/examples/* defined-in "./examples/"
+package mechanical defined-in "mechanical.stanza"
+
