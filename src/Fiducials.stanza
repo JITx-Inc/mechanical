@@ -1,6 +1,315 @@
+
 #use-added-syntax(jitx)
+doc: \<DOC>
+@title Fiducials
+
+@description
+
+This package contains functions and helpers for constructing fiducials
+in a design. Fiducials are often used to aid the manufacturing and
+assembly process for a PCBA. Typically, they are used by an automated optical
+system to detect where a "Pick and Place" machine should place components.
+
+Global fiducials are often to help the optical system to determine
+accurately the frame of reference of the board in 3D space. Many boards
+often have local fiducials for large complex components like
+BGAs to aid in accurate placement of those components specifically.
+
+This package defines mechanical components for including fiducials in a
+design. Further, it provides functions for accurately placing both
+global and local fiducials.
+
+<DOC>
 defpackage mechanical/Fiducials:
   import core
+  import math
   import jitx
   import jitx/commands
+
+  import jsl
+
+doc: \<DOC>
+Standard Fiducial
+
+This produces a circular shaped fiducial.
+
+@param cu-D Copper fiducial diameter in mm. Default is 1.0mm
+@param smask-D Soldermask opening diameter in mm. Default is `2 * cu-D`.
+@param name? Optional string name to uniquely identify this fiducial.
+
+@member p[1] The landpattern defines a pad with a single pad reference. Typically
+this pad is not connected/netted to any other device.
+<DOC>
+public defn create-std-fiducial (cu-D:Double = 1.0, smask-D:Double = cu-D * 2.0 -- name?:String = ?) -> LandPattern:
+
+  pcb-landpattern std-fiducial-lp :
+    match(name?):
+      (_:None): false
+      (n:One<String>): name = value(n)
+    ; No Paste application for the fiducial
+    val fid-pad = smd-pad(Circle(to-radius(cu-D)), Circle(to-radius(smask-D)), false)
+    pad p[1] : fid-pad at loc(0.0, 0.0)
+
+    ; The courtyard helps layer when attempting to determine
+    ;  the size of the fiducial
+    val cyard-D = smask-D
+    layer(Courtyard(Top)) = Circle(to-radius(cyard-D))
+
+  std-fiducial-lp
+
+doc: \<DOC>
+Standard Circular Fiducial
+
+This landpattern is a circular fiducial with 1mm diameter copper
+and 2mm diameter soldermask opening.
+<DOC>
+val STD-FIDUCIAL-LP:LandPattern = create-std-fiducial(name? = "STD-FIDUCIAL")
+
+doc: \<DOC>
+Shaped Fiducial Landpattern
+
+This allows the user to construct an arbitrarily shaped
+fiducial landpattern. See {@link smd-pad} for more
+information about the arguments.
+
+@param cu Shape for the copper fiducial pad.
+@param smask Expansion value or explicit shape for the soldermask opening.
+By default, this creates the soldermask opening by expanding the `cu`
+shape by 1.0mm in all directions.
+@param name? Optional string name to uniquely identify this fiducial.
+
+@member p[1] The landpattern defines a pad with a single pad reference. Typically
+this pad is not connected/netted to any other device.
+
+<DOC>
+public defn create-shaped-fiducial (cu:Shape, smask:Double|Shape = 1.0 -- name?:String = ?) -> LandPattern:
+  pcb-landpattern sh-fiducial-lp:
+    match(name?):
+      (_:None): false
+      (n:One<String>): name = value(n)
+    ; No Paste application for the fiducial
+    val fid-pad = smd-pad(cu, smask, false)
+    pad p[1] : fid-pad at loc(0.0, 0.0)
+
+    val smask-set = layer(fid-pad, SolderMask(Top))
+    if length(smask-set) == 0:
+      throw $ ValueError("Expected Soldermask Opening for Fiducial Pad - Found None")
+    val smask = smask-set[0]
+    ; This helps later with determine the dimensions of the fiducial.
+    layer(Courtyard(Top)) = smask
+
+  sh-fiducial-lp
+
+
+doc: \<DOC>
+Fiducial Schematic Symbol Generator
+
+This generator creates symbols that look like a bullseye.
+<DOC>
+public defstruct FiducialSymbol <: SymbolDefn:
+  doc: \<DOC>
+  Name for the constructed `pcb-symbol`
+  <DOC>
+  name:String with:
+    as-method => true
+    default => "fiducial"
+  doc: \<DOC>
+  Overall diameter for the bullseye's largest ring.
+  <DOC>
+  diam:Double with:
+    default => 1.0
+    ensure => ensure-positive!
+  doc: \<DOC>
+  Number of rings to include
+  The total diameter is divided by this number. This becomes the increment
+  when creating the next largest circle, starting with the first.
+  <DOC>
+  num-rings:Int with:
+    default => 2
+    ensure => ensure-positive!
+  doc: \<DOC>
+  Excess line length for the cross-hair lines beyond the `diam` of the largest ring.
+  <DOC>
+  overshoot:Double with:
+    default => 0.25
+    ensure => ensure-positive!
+  doc: \<DOC>
+  Line width for the symbol's rings and cross-hairs.
+  <DOC>
+  line-width:Double with:
+    default => 0.05
+    ensure => ensure-positive!
+  doc: \<DOC>
+  Parameters to define the reference designator string size.
+  By default no value string is created.
+  <DOC>
+  get-params:SymbolParams with:
+    as-method => true
+    default => SymbolParams(
+      One $ SymbolLabelParams(value-label-size = None())
+    )
+with:
+  printer => true
+  keyword-constructor => true
+
+defmethod build-pins (s:FiducialSymbol, sn:SymbolNode):
+  false
+
+defmethod build-params (x:FiducialSymbol, sn:SymbolNode):
+  val b = glyph-bounds(sn)
+  val p = get-label-params $ get-params(x)
+  build-labels(
+    p,
+    sn,
+    LabelPosition([0.0, up(b)], SW)
+    LabelPosition([0.0, up(b) + 0.5], NW)
+    )
+
+defmethod build-artwork (s:FiducialSymbol, sn:SymbolNode):
+  val lw = line-width(s)
+
+  val nr = num-rings(s)
+  val diam-it = diam(s) / to-double(nr)
+
+  for i in 0 to nr do:
+    val R = to-radius(to-double(i + 1) * diam-it)
+    add-glyph(sn, Polyline(lw, [Arc(Point(0.0, 0.0), R, 0.0, 359.0 )]))
+
+  ; Cross Lines
+  val os = overshoot(s)
+  val l-extent = to-radius(diam(s)) + os
+  add-glyph(sn, Line(lw, [Point(0.0, l-extent), Point(0.0, (- l-extent))]))
+  add-glyph(sn, Line(lw, [Point(l-extent, 0.0), Point((- l-extent), 0.0)]))
+
+
+doc: \<DOC>
+Standard Fiducial Schematic Symbol
+
+This should be sufficient for most use cases.
+<DOC>
+public val STD-FIDUCIAL-SYMB = FiducialSymbol()
+
+doc: \<DOC>
+Construct a Fiducial Component Instantiable
+
+The created component will create a reference designator with prefix `F*`
+
+@param lp Landpattern to use when constructing the fiducial. By default this uses {@link STD-FIDUCIAL-LP}
+@param symb Schematic Symbol to use when constructing the fiducial. By default, this uses {@link STD-FIDUCIAL-SYMB}
+@param name? Optional name to apply to the component definition. This is useful for uniquely identifying fiducial instantiables.
+<DOC>
+public defn fiducial-component (lp:LandPattern = STD-FIDUCIAL-LP, symb:FiducialSymbol = STD-FIDUCIAL-SYMB -- name?:String = ?) -> Instantiable :
+  pcb-component fid-comp :
+    reference-prefix = "F"
+    match(name?):
+      (_:None): false
+      (n:One<String>): name = value(n)
+
+    assign-symbol $ create-symbol(symb)
+    assign-landpattern(lp)
+
+  fid-comp
+
+
+doc: \<DOC>
+Standard Fiducial
+
+This is a standard component definition for fiducials. It should be sufficient
+for the most common cases.
+<DOC>
+public val STD-FIDUCIAL:Instantiable = fiducial-component()
+
+
+; Helper Utilities
+
+defn mult (A:Point, B:Point) -> Point:
+  Point(x(A) * x(B), y(A) * y(B))
+
+defn sum-pts (flip:Point, pts:Tuple<Point>) -> Point:
+  var result = Point(0.0, 0.0)
+  for pt in pts do:
+    val rpt = mult(flip, pt)
+    result = result + rpt
+  result
+
+defn flip-by-anchor (anch:Anchor) -> Point :
+  match(anch):
+    (a:NE): Point(1.0, 1.0)
+    (a:SW): Point(-1.0, -1.0)
+    (a:NW): Point(-1.0, 1.0)
+    (a:SE): Point(1.0, -1.0)
+    (a:N): Point(0.0, 1.0)
+    (a:S): Point(0.0, -1.0)
+    (a:E): Point(1.0, 0.0)
+    (a:W): Point(-1.0, 0.0)
+    (a:C): Point(0.0, 0.0)
+
+
+
+doc: \<DOC>
+Construct local fiducials relative to a given component
+
+Given a component instance, determine its bounds and then place
+fiducials relative to that component instance using the `relative-to` statement.
+
+This function is a generator and is expected to be called from within in a
+`pcb-module` context.
+
+All created fiducial instances are marked `NotInBOM`.
+
+@param comp Component instance with landpattern - do not pass a `pcb-module` instance.
+@param margin Offset from the component's courtyard. If this value is 0.0, then the fiducial
+will be placed directly on the courtyard. By default, the margin will be selected such that
+there is 0.2mm margin between the courtyard and the edge of the soldermask opening of the fiducial.
+@param fid Fiducial Component Instantiable - By default we use {@link STD-FIDUCIAL}. Alternatively,
+the user can pass an overriding instantiable.
+@param anchors Set of anchor positions where fiducials will be created. By default, this function
+will create fiducials in the `NE` and `SW` corners.
+
+@throws ValueError If the passed component instance's landpattern does not have a courtyard on the `Top` layer.
+@throws ArgumentError If the `C` anchor is passed in the `anchors` argument.
+<DOC>
+public defn make-local-fiducials (comp:Instance -- margin:Double = 0.2, fid:Instantiable = STD-FIDUCIAL, anchors:Tuple<Anchor> = [NE, SW] ):
+  inside pcb-module:
+    val comp-def = instance-definition(comp)
+    val lp = landpattern(comp-def)
+
+    val cyard = layer(lp, Courtyard(Top))
+
+    if length(cyard) == 0:
+      throw $ ValueError("Invalid Components for Local Fiducials - No Courtyard data found in landpattern!")
+
+    val cy-d = dims $ Union(cyard)
+
+    val fid-lp = landpattern(fid)
+    val fid-cyard-set = layer(fid-lp, Courtyard(Top))
+    if length(fid-cyard-set) == 0:
+      throw $ ValueError("Fiducial '%_' Landpattern lacks a courtyard - please provide one" % [name(fid)])
+    val fid-cyard = fid-cyard-set[0]
+    val smask-d = dims(fid-cyard)
+
+    val corner = Point(x(cy-d), y(cy-d)) / 2.0
+    val smask-offset = Point(x(smask-d), y(smask-d)) / 2.0
+    val margin-offset = Point(margin, margin)
+
+    inst local-fids : fid[length(anchors)]
+
+    for i in 0 to length(local-fids) do:
+      instance-status(local-fids[i]):
+        bom-status = NotInBOM
+
+    for (anch in anchors, i in 0 to false) do:
+      val pts = [corner, smask-offset, margin-offset]
+      if anch is C:
+        throw $ ArgumentError("Unhandled Anchor %_" % [anch])
+
+      val flip-mod = flip-by-anchor(anch)
+      val fid-pt = sum-pts(flip-mod, pts)
+      place(local-fids[i]) at loc(fid-pt) on Top (relative-to comp)
+
+
+
+
+
+
 

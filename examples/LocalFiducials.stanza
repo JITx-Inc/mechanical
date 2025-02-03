@@ -1,0 +1,115 @@
+#use-added-syntax(jitx)
+defpackage mechanical/examples/LocalFiducials:
+  import core
+  import math
+  import jitx
+  import jitx/commands
+
+  import jsl
+  import jsl/examples/landpatterns/board
+
+  import mechanical/Fiducials
+
+val board-shape = RoundedRectangle(50.0, 50.0, 0.25)
+
+doc: \<DOC>
+Dummy QFN component to which we will apply fiducials
+<DOC>
+pcb-component dummy-QFN :
+
+  pin-properties:
+    [pin:Ref | pads:Ref ... ]
+    for i in 1 through 64 do:
+      [p[i] | p[i]]
+
+  ; I'm not creating a very pretty symbol - but that
+  ;  isn't really the point of this exercise.
+  val box = BoxSymbol(self)
+  assign-symbol $ create-symbol(box)
+
+  val pkg = QFN(
+    num-leads = 64,
+    lead-profile = QFN-Lead-Profile(
+      span = 9.0 +/- 0.05,
+      pitch = 0.5,
+      lead-length = 0.4 +/- 0.05,
+      lead-width = 0.25 +/- 0.05
+    ),
+    thermal-lead? = ThermalPad(Rectangle(7.15, 7.15), padding = 0.25),
+    package-body = PackageBody(
+      width = 9.0 +/- 0.05,
+      length = 9.0 +/- 0.05,
+      height = 0.8 +/- 0.05
+    ),
+    pad-planner = Corner-PadPlanner(
+      chamfered-corner-shaper(0.15),
+      rect-shaper,
+      16
+    )
+    density-level = DensityLevelA
+  )
+
+  val lp = create-landpattern(pkg)
+  assign-landpattern(lp)
+
+doc: \<DOC>
+Construct a fiducial with an Equilaterial Triangle shape
+
+@param s Side of the equilateral triangle - this determines the
+copper shape.
+<DOC>
+defn create-equi-triangle-fiducial (s:Double) -> Instantiable:
+  val R = s * sqrt(3.0) / 3.0
+  val r = R / 2.0
+
+  fiducial-component(
+    create-shaped-fiducial(Polygon([
+      Point(s / 2.0, (- r)),
+      Point(s / -2.0, (- r)),
+      Point(0.0, R)
+      ]),
+      Circle(R + 0.5)
+      ),
+    name? = "TRI-FID"
+  )
+
+
+
+pcb-module test-design:
+
+  inst U1 : dummy-QFN
+  ; You will notice that the margin isn't exactly zero here
+  ;  because we use the bounding box of a circle to determine
+  ;  the size of the fiducial.
+  make-local-fiducials(U1, margin = 0.0)
+
+  inst U2 : dummy-QFN
+  make-local-fiducials(U2, margin = 0.5, anchors = [NW, SE])
+
+  inst U3 : dummy-QFN
+  ; Putting the fiducials on the side of a QFN isn't super useful
+  ;  but it demonstrates the concept.
+  make-local-fiducials(U3, margin = 0.25, anchors = [E, W, N, S])
+
+
+  inst U4 : dummy-QFN
+  ; Differently shaped fiducials, just for fun.
+  val TRI-FIDUCIAL = create-equi-triangle-fiducial(1.0)
+  make-local-fiducials(U4, margin = 0.25, fid = TRI-FIDUCIAL)
+
+
+
+
+; Set the top level module (the module to be compile into a schematic and PCB)
+set-current-design("LocalFiducials-TEST")
+set-rules(default-rules)
+set-board(default-board(board-shape))
+
+set-main-module(test-design)
+
+; Use any helper function from helpers.stanza here. For example:
+; run-check-on-design(my-design)
+
+; View the results
+view-board()
+
